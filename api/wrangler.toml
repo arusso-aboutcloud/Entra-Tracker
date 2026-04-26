@@ -1,0 +1,10 @@
+name = "entra-tracker"
+main = "worker.js"
+compatibility_date = "2026-03-31"
+
+[[kv_namespaces]]
+binding = "ENTRA_CACHE"
+id = "7f7ec741df00421cbdefc462630c7b75"
+
+[observability]
+enabled = true
