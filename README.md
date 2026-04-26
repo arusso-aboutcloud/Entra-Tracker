@@ -9,3 +9,5 @@ Onboarded from Cloudflare standalone to GitHub management.
 ## Configuration
 - KV Binding: `ENTRA_CACHE` (`7f7ec741df00421cbdefc462630c7b75`)
 - Domains: entratracker.aboutcloud.io, tracker.aboutcloud.io
+
+# Last sync: Sun Apr 26 01:23:13 PM UTC 2026
