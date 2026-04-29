@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Entra Change Tracker — AboutCloud</title>
+<meta name="description" content="Live tracker for Microsoft Entra ID retirements, breaking changes and preview features. Built by AboutCloud.io">
+<link rel="icon" href="https://aboutcloud.io/content/images/size/w256h256/2026/03/logo_60x60_white.png">
+<link rel="canonical" href="https://entratracker.aboutcloud.io">
+
+<!-- Open Graph -->
+<meta property="og:title" content="Entra Change Tracker — AboutCloud">
+<meta property="og:description" content="Live Microsoft Entra ID &amp; External ID change tracker — retirements, breaking changes and previews">
+<meta property="og:url" content="https://entratracker.aboutcloud.io">
+<meta property="og:image" content="https://images.aboutcloud.io/2026/03/Microsoft-Entra-Reinvents-Identity-For-The-Agentic-Era.webp">
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Umami — tracker.aboutcloud.io site ID -->
+<script defer src="https://analytics.aboutcloud.io/script.js" data-website-id="a58f5b6a-e25d-4dd8-a008-5e5001b3c97c"></script>
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0d1117;
+  --nav:       #161b22;
+  --surf:      #161b22;
+  --surf2:     #1c2128;
+  --bdr:       #30363d;
+  --bdr-light: #21262d;
+  --text:      #e6edf3;
+  --muted:     #8b949e;
+  --dim:       #484f58;
+  --accent:    #58a6ff;
+  --red:       #ff7b72;
+  --red-bg:    rgba(255,123,114,.12);
+  --red-bdr:   rgba(255,123,114,.3);
+  --yel:       #e3b341;
+  --yel-bg:    rgba(227,179,65,.12);
+  --yel-bdr:   rgba(227,179,65,.3);
+  --grn:       #3fb950;
+  --grn-bg:    rgba(63,185,80,.12);
+  --grn-bdr:   rgba(63,185,80,.3);
+  --pur:       #bc8cff;
+  --pur-bg:    rgba(188,140,255,.12);
+  --pur-bdr:   rgba(188,140,255,.3);
+  --grey-bg:   rgba(139,148,158,.1);
+  --r:         10px;
+  --f:         'DM Sans', system-ui, sans-serif;
+  --fd:        'Chakra Petch', sans-serif;
+  --fm:        'DM Mono', 'Fira Code', monospace;
+}
+
+html { font-size: 16px; }
+body {
+  font-family: var(--f);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+/* ── Top nav ── */
+.topnav {
+  background: var(--nav);
+  border-bottom: 1px solid var(--bdr);
+  padding: 0 2rem;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.topnav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  text-decoration: none;
+  color: var(--text);
+  font-family: var(--fd);
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.topnav-brand img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.topnav-links {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.topnav-links a {
+  font-family: var(--fm);
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.topnav-links a:hover, .topnav-links a.active { color: var(--accent); }
+
+/* ── Page wrapper ── */
+.page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2.5rem 3rem 5rem;
+}
+
+/* ── Hero header ── */
+.hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid var(--bdr);
+}
+
+.hero-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.hero-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.hero-bolt { font-size: 2rem; line-height: 1; }
+
+.hero-title {
+  font-family: var(--fd);
+  font-size: 2.4rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  line-height: 1.1;
+  margin-bottom: 0.3rem;
+}
+
+.hero-sub {
+  font-family: var(--fm);
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.hero-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
+
+.hero-updated {
+  font-family: var(--fm);
+  font-size: 0.82rem;
+  color: var(--muted);
+  background: var(--surf);
+  border: 1px solid var(--bdr);
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+}
+
+.hero-live {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--fm);
+  font-size: 0.75rem;
+  color: var(--grn);
+}
+
+.hero-live::before {
+  content: '';
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--grn);
+  box-shadow: 0 0 8px var(--grn);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+/* ── Stats grid ── */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: var(--surf);
+  border: 1px solid var(--bdr);
+  border-radius: var(--r);
+  padding: 1.5rem 1.75rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  user-select: none;
+}
+
+.stat-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.stat-card.active { border-color: var(--accent); background: var(--surf2); }
+
+.stat-num {
+  font-family: var(--fd);
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 0.4rem;
+}
+
+.stat-lbl {
+  font-family: var(--fm);
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-card.s-red .stat-num    { color: var(--red); }
+.stat-card.s-yel .stat-num    { color: var(--yel); }
+.stat-card.s-grn .stat-num    { color: var(--grn); }
+.stat-card.s-grey .stat-num   { color: var(--muted); }
+
+/* ── External ID namespace row ─────────────────────────────────────────── */
+.stat-extid-row {
+  margin-bottom: 1.5rem;
+}
+
+.stat-card-extid {
+  background: rgba(192,132,252,.06);
+  border: 1px solid rgba(192,132,252,.25);
+  border-radius: var(--r);
+  padding: 1rem 1.75rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+.stat-card-extid:hover { border-color: #c084fc; transform: translateY(-2px); }
+.stat-card-extid.active { border-color: #c084fc; background: rgba(192,132,252,.1); }
+
+.extid-count {
+  font-family: var(--fd);
+  font-size: 3rem; font-weight: 700; line-height: 1;
+  color: #c084fc; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.extid-meta { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.extid-label {
+  font-family: var(--fm); font-size: 0.82rem;
+  color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
+}
+.extid-sublabel {
+  font-family: var(--fm); font-size: 0.72rem; color: var(--dim); line-height: 1.4;
+}
+.extid-urgency { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.extid-pill {
+  font-family: var(--fm); font-size: 0.72rem;
+  padding: 0.2rem 0.65rem; border-radius: 4px; white-space: nowrap;
+}
+.extid-pill.urgent { color: var(--red);  background: var(--red-bg);  border: 1px solid var(--red-bdr); }
+.extid-pill.plan   { color: var(--yel);  background: var(--yel-bg);  border: 1px solid var(--yel-bdr); }
+.extid-pill.info   { color: #c084fc; background: rgba(192,132,252,.1); border: 1px solid rgba(192,132,252,.3); }
+.extid-pill.good   { color: var(--grn); background: var(--grn-bg); border: 1px solid var(--grn-bdr); }
+
+/* ── Namespace context banner (shown when External ID filter active) ───── */
+.namespace-ctx {
+  background: rgba(192,132,252,.04);
+  border: 1px solid rgba(192,132,252,.18);
+  border-radius: var(--r);
+  padding: 1rem 1.25rem 1.1rem;
+  margin-bottom: 1.25rem;
+  display: none;
+}
+.namespace-ctx.visible { display: block; }
+
+.ctx-header { display: flex; align-items: center; gap: 0.65rem; margin-bottom: 0.45rem; }
+.ctx-title { font-family: var(--fd); font-size: 0.95rem; font-weight: 600; color: #c084fc; }
+.ctx-tags { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.ctx-tag {
+  font-family: var(--fm); font-size: 0.68rem; color: #c084fc;
+  background: rgba(192,132,252,.08); padding: 0.1rem 0.5rem;
+  border-radius: 4px; border: 1px solid rgba(192,132,252,.25);
+}
+.ctx-desc {
+  font-family: var(--fm); font-size: 0.78rem; color: var(--muted);
+  line-height: 1.55; margin-bottom: 0.85rem;
+}
+
+.ctx-urgency-row { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: center; }
+.ctx-urgency-item { display: flex; align-items: baseline; gap: 0.35rem; }
+.ctx-urgency-num {
+  font-family: var(--fd); font-size: 1.6rem; font-weight: 700; line-height: 1;
+}
+.ctx-urgency-lbl { font-family: var(--fm); font-size: 0.75rem; color: var(--muted); }
+.ctx-urgency-item.u-red .ctx-urgency-num { color: var(--red); }
+.ctx-urgency-item.u-yel .ctx-urgency-num { color: var(--yel); }
+.ctx-urgency-item.u-grn .ctx-urgency-num { color: var(--grn); }
+.ctx-urgency-item.u-pur .ctx-urgency-num { color: #c084fc; }
+
+.ctx-divider { height: 1px; background: rgba(192,132,252,.1); margin: 0.85rem 0 0.75rem; }
+
+.ctx-all-clear {
+  display: none; align-items: center; gap: 0.5rem;
+  font-family: var(--fm); font-size: 0.8rem; color: var(--grn);
+}
+.ctx-all-clear.show { display: flex; }
+
+/* ── Controls ── */
+.controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+
+.fbtn {
+  font-family: var(--fm);
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.5rem 1.2rem;
+  border-radius: 24px;
+  border: 1px solid var(--bdr);
+  background: var(--surf);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.fbtn:hover { color: var(--text); border-color: var(--accent); }
+.fbtn.active { background: var(--accent); border-color: var(--accent); color: #0d1117; font-weight: 700; }
+
+.toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--fm);
+  font-size: 0.78rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-wrap input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.toggle-wrap:hover { color: var(--text); }
+
+.search-wrap {
+  margin-left: auto;
+  position: relative;
+}
+
+.search-wrap::before {
+  content: '⌕';
+  position: absolute;
+  left: 0.9rem; top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 1.1rem;
+  pointer-events: none;
+}
+
+.search-input {
+  font-family: var(--fm);
+  font-size: 0.85rem;
+  padding: 0.5rem 1rem 0.5rem 2.3rem;
+  border-radius: 24px;
+  border: 1px solid var(--bdr);
+  background: var(--surf);
+  color: var(--text);
+  width: 260px;
+  outline: none;
+  transition: border-color 0.15s, width 0.2s;
+}
+
+.search-input:focus { border-color: var(--accent); width: 320px; }
+.search-input::placeholder { color: var(--dim); }
+
+/* ── Legend ── */
+.legend {
+  background: var(--surf);
+  border: 1px solid var(--bdr);
+  border-radius: var(--r);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+
+.legend-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  cursor: pointer;
+  user-select: none;
+  font-family: var(--fm);
+  font-size: 0.8rem;
+  color: var(--muted);
+  transition: color 0.15s;
+  list-style: none;
+}
+
+.legend-toggle:hover { color: var(--text); }
+.legend-toggle::marker { display: none; }
+
+.legend-toggle-icon {
+  font-size: 0.7rem;
+  transition: transform 0.2s;
+}
+
+details[open] .legend-toggle-icon { transform: rotate(180deg); }
+
+.legend-body {
+  padding: 0 1.25rem 1.25rem;
+  border-top: 1px solid var(--bdr-light);
+}
+
+.legend-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem 2rem;
+  margin-top: 1rem;
+}
+
+.legend-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.legend-item-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-dot.red    { background: var(--red);   box-shadow: 0 0 5px var(--red); }
+.legend-dot.yellow { background: var(--yel);   box-shadow: 0 0 5px var(--yel); }
+.legend-dot.green  { background: var(--grn);   box-shadow: 0 0 5px var(--grn); }
+
+.legend-badge-name {
+  font-family: var(--fm);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.legend-desc {
+  font-family: var(--fm);
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.5;
+  padding-left: 1.25rem;
+}
+
+.legend-divider {
+  grid-column: 1 / -1;
+  border: none;
+  border-top: 1px solid var(--bdr-light);
+  margin: 0.25rem 0;
+}
+
+@media (max-width: 640px) {
+  .legend-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Count label ── */
+.count-lbl {
+  font-family: var(--fm);
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+
+.count-lbl strong { color: var(--accent); }
+
+/* ── Entry list ── */
+.entry-list { display: flex; flex-direction: column; gap: 0.65rem; }
+
+.entry {
+  display: grid;
+  grid-template-columns: 4px 1fr auto;
+  background: var(--surf);
+  border: 1px solid var(--bdr-light);
+  border-radius: var(--r);
+  overflow: hidden;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.entry:hover { border-color: var(--bdr); background: var(--surf2); }
+
+.entry-strip { flex-shrink: 0; }
+.entry.s-red    .entry-strip { background: var(--red); }
+.entry.s-yel    .entry-strip { background: var(--yel); }
+.entry.s-grn    .entry-strip { background: var(--grn); }
+.entry.s-exp    .entry-strip { background: var(--dim); }
+
+.entry-body { padding: 1.25rem 1.5rem; min-width: 0; }
+
+.entry-title {
+  font-family: var(--fd);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 0.4rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.entry-desc {
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 0.65rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.entry-meta { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+
+.badge {
+  font-family: var(--fm);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.badge.c-retirement { color:var(--red); background:var(--red-bg); border-color:var(--red-bdr); }
+.badge.c-breaking   { color:var(--yel); background:var(--yel-bg); border-color:var(--yel-bdr); }
+.badge.c-preview    { color:var(--pur); background:var(--pur-bg); border-color:var(--pur-bdr); }
+.badge.c-new_feature{ color:var(--grn); background:var(--grn-bg); border-color:var(--grn-bdr); }
+.badge.i-high       { color:var(--red); background:var(--red-bg); border-color:var(--red-bdr); }
+.badge.i-medium     { color:var(--yel); background:var(--yel-bg); border-color:var(--yel-bdr); }
+.badge.i-low        { color:var(--muted); background:var(--grey-bg); border-color:var(--bdr); }
+
+.lnk {
+  font-family: var(--fm);
+  font-size: 0.72rem;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid rgba(88,166,255,.2);
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.lnk:hover { background: rgba(88,166,255,.12); border-color: var(--accent); }
+.lnk.art { color: var(--grn); border-color: rgba(63,185,80,.2); }
+.lnk.art:hover { background: rgba(63,185,80,.12); border-color: var(--grn); }
+
+/* Countdown */
+.entry-right {
+  padding: 1.25rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.25rem;
+  min-width: 140px;
+  border-left: 1px solid var(--bdr-light);
+}
+
+.cd-num {
+  font-family: var(--fd);
+  font-size: 2.4rem;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.cd-lbl {
+  font-family: var(--fm);
+  font-size: 0.65rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  text-align: right;
+}
+
+.cd-date {
+  font-family: var(--fm);
+  font-size: 0.72rem;
+  color: var(--dim);
+  text-align: right;
+}
+
+.cd-num.s-red { color: var(--red); }
+.cd-num.s-yel { color: var(--yel); }
+.cd-num.s-grn { color: var(--grn); }
+.cd-num.s-exp { color: var(--muted); font-size: 0.85rem; letter-spacing: 0.05em; }
+
+/* States */
+.state-msg {
+  text-align: center;
+  padding: 5rem 1rem;
+  color: var(--muted);
+  font-family: var(--fm);
+  font-size: 0.9rem;
+}
+
+.spinner {
+  display: inline-block;
+  width: 28px; height: 28px;
+  border: 2px solid var(--bdr);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Footer */
+.footer {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--bdr);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.footer-text {
+  font-family: var(--fm);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.footer-text a { color: var(--accent); text-decoration: none; }
+.footer-text a:hover { text-decoration: underline; }
+
+/* ── Responsive ── */
+@media (max-width: 1200px) {
+  .page { padding: 2rem 2rem 4rem; }
+}
+
+@media (max-width: 900px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .hero-title { font-size: 1.9rem; }
+  .ctx-urgency-row { gap: 1rem; }
+}
+
+@media (max-width: 640px) {
+  .page { padding: 1.5rem 1.25rem 3rem; }
+  .topnav { padding: 0 1.25rem; }
+  .topnav-links { gap: 1rem; }
+
+  .hero { flex-direction: column; gap: 1rem; }
+  .hero-right { align-items: flex-start; }
+  .hero-title { font-size: 1.6rem; }
+
+  .stats { grid-template-columns: repeat(2, 1fr); gap: 0.65rem; }
+  .stat-num { font-size: 2.2rem; }
+
+  .entry { grid-template-columns: 4px 1fr; }
+  .entry-right {
+    grid-column: 2;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 1rem;
+    border-left: none;
+    border-top: 1px solid var(--bdr-light);
+    padding: 0.75rem 1.25rem;
+    min-width: 0;
+  }
+
+  .cd-num { font-size: 1.6rem; text-align: left; }
+  .cd-lbl, .cd-date { text-align: left; }
+
+  .search-wrap { margin-left: 0; width: 100%; }
+  .search-input { width: 100%; }
+  .search-input:focus { width: 100%; }
+
+  .controls { gap: 0.4rem; }
+  .fbtn { font-size: 0.78rem; padding: 0.4rem 0.9rem; }
+}
+
+/* ── TENANT PROFILE ────────────────────────────────────────────────────────── */
+.profile-panel {
+  background: var(--surf);
+  border: 1px solid rgba(88,166,255,.25);
+  border-radius: var(--r);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+
+.profile-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.75rem 1.25rem; cursor: pointer; user-select: none;
+  font-family: var(--fm); font-size: 0.8rem; color: var(--accent);
+  background: none; border: none; width: 100%; text-align: left;
+  transition: opacity 0.15s;
+}
+.profile-toggle:hover { opacity: 0.8; }
+
+.profile-toggle-right { display: flex; align-items: center; gap: 0.75rem; }
+
+.profile-badge {
+  font-family: var(--fm); font-size: 0.7rem;
+  color: var(--grn); background: var(--grn-bg);
+  border: 1px solid var(--grn-bdr);
+  padding: 0.15rem 0.6rem; border-radius: 4px;
+  display: none;
+}
+.profile-badge.on { display: inline; }
+
+.profile-toggle-icon { font-size: 0.7rem; transition: transform 0.2s; }
+.profile-panel.open .profile-toggle-icon { transform: rotate(180deg); }
+
+.profile-body {
+  padding: 1rem 1.25rem 1.25rem;
+  border-top: 1px solid rgba(88,166,255,.12);
+  display: none;
+}
+.profile-panel.open .profile-body { display: block; }
+
+.profile-intro {
+  font-size: 0.82rem; color: var(--muted);
+  margin-bottom: 1rem; line-height: 1.55;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.55rem 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.profile-item { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+.profile-item input[type="checkbox"] {
+  width: 14px; height: 14px; cursor: pointer;
+  accent-color: var(--accent); flex-shrink: 0;
+}
+.profile-item label {
+  font-family: var(--fm); font-size: 0.77rem;
+  color: var(--text); cursor: pointer; line-height: 1.3;
+}
+
+.profile-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }
+
+.profile-save {
+  font-family: var(--fm); font-size: 0.78rem;
+  padding: 0.4rem 1rem; border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: rgba(88,166,255,.1); color: var(--accent);
+  cursor: pointer; transition: all 0.15s;
+}
+.profile-save:hover { background: rgba(88,166,255,.2); }
+
+.profile-reset {
+  font-family: var(--fm); font-size: 0.72rem; color: var(--muted);
+  background: none; border: none; cursor: pointer;
+  text-decoration: underline; transition: color 0.15s;
+}
+.profile-reset:hover { color: var(--text); }
+
+.profile-note {
+  font-family: var(--fm); font-size: 0.7rem;
+  color: var(--dim); margin-top: 0.75rem; line-height: 1.5;
+}
+
+/* Tenant impact badge on cards */
+.badge.i-tenant {
+  color: var(--accent);
+  background: rgba(88,166,255,.1);
+  border-color: rgba(88,166,255,.3);
+}
+
+/* External ID badge on cards */
+.badge.i-external-id {
+  color: #c084fc;
+  background: rgba(192,132,252,.1);
+  border-color: rgba(192,132,252,.3);
+}
+
+/* External ID filter button active state */
+.fbtn.ext-id-btn { color: #c084fc; border-color: rgba(192,132,252,.4); }
+.fbtn.ext-id-btn.active { background: rgba(192,132,252,.15); border-color: #c084fc; }
+
+/* External ID stat card */
+.stat-card.s-purple .stat-num { color: #c084fc; }
+
+/* Affected stat card */
+.stat-card.s-blue .stat-num { color: var(--accent); }
+
+@media (max-width: 640px) {
+  .profile-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- Top navigation -->
+<nav class="topnav">
+  <a class="topnav-brand" href="https://aboutcloud.io">
+    <img src="https://aboutcloud.io/content/images/size/w256h256/2026/03/logo_60x60_white.png"
+         alt="AboutCloud" onerror="this.style.display='none'">
+    AboutCloud
+  </a>
+  <div class="topnav-links">
+    <a href="https://aboutcloud.io">Home</a>
+    <a href="https://aboutcloud.io/tag/entra-id/">Entra ID</a>
+    <a href="https://entratracker.aboutcloud.io" class="active">Entra Tracker</a>
+    <a href="https://entraerrors.aboutcloud.io">Entra Errors</a>
+    <a href="https://aboutcloud.io/about/">About</a>
+  </div>
+</nav>
+
+<!-- Main page -->
+<div class="page">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-left">
+      <img src="https://images.aboutcloud.io/2026/03/Microsoft-Entra-Reinvents-Identity-For-The-Agentic-Era.webp"
+           class="hero-logo" alt="Microsoft Entra" onerror="this.style.display='none'">
+      <img src="https://images.aboutcloud.io/2026/03/azure.png"
+           class="hero-logo" alt="Microsoft Azure" onerror="this.style.display='none'" style="margin-left:-0.25rem">
+      <span class="hero-bolt">⚡</span>
+      <div>
+        <div class="hero-title">Entra Change Tracker</div>
+        <div class="hero-sub">Live feed — retirements, breaking changes &amp; previews</div>
+      </div>
+    </div>
+    <div class="hero-right">
+      <div id="upd" class="hero-updated">Loading...</div>
+      <div class="hero-live">Auto-refreshes every 4 hours</div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats" id="stats" style="display:none">
+    <div class="stat-card s-red"  data-sf="red">
+      <div class="stat-num" id="sn-red">0</div>
+      <div class="stat-lbl">🔴 Urgent · &lt;90 days</div>
+    </div>
+    <div class="stat-card s-yel" data-sf="yellow">
+      <div class="stat-num" id="sn-yel">0</div>
+      <div class="stat-lbl">🟡 Plan now · 90–180d</div>
+    </div>
+    <div class="stat-card s-grn" data-sf="green">
+      <div class="stat-num" id="sn-grn">0</div>
+      <div class="stat-lbl">🟢 On radar · &gt;180d</div>
+    </div>
+    <div class="stat-card s-grey" data-sf="expired">
+      <div class="stat-num" id="sn-exp">0</div>
+      <div class="stat-lbl">⚫ Expired</div>
+    </div>
+    <div class="stat-card s-blue" data-sf="tenant" id="stat-tenant" style="display:none">
+      <div class="stat-num" id="sn-tenant">0</div>
+      <div class="stat-lbl">🎯 Affects your tenant</div>
+    </div>
+  </div>
+
+  <!-- External ID namespace card — always visible once data loads -->
+  <div class="stat-extid-row" id="extid-row" style="display:none">
+    <div class="stat-card-extid" id="stat-extid" data-sf="external-id">
+      <div class="extid-count" id="sn-extid">0</div>
+      <div class="extid-meta">
+        <div class="extid-label">🟣 External ID</div>
+        <div class="extid-sublabel">B2B collaboration · B2C · External tenants (CIAM)</div>
+        <div class="extid-urgency" id="extid-urgency-pills"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context banner — shown only when External ID filter is active -->
+  <div class="namespace-ctx" id="extid-ctx">
+    <div class="ctx-header">
+      <span class="ctx-title">🟣 External ID</span>
+      <div class="ctx-tags">
+        <span class="ctx-tag">B2B Collaboration</span>
+        <span class="ctx-tag">Azure AD B2C</span>
+        <span class="ctx-tag">External Tenants (CIAM)</span>
+        <span class="ctx-tag">Cross-tenant access</span>
+      </div>
+    </div>
+    <p class="ctx-desc">
+      Tracks Microsoft Entra External ID feature releases, breaking changes, and retirements.
+      Covers B2B guest access, Azure AD B2C (legacy CIAM), and the new unified External ID platform for customer identity.
+      Items without a countdown are feature releases — informational, no action required.
+    </p>
+    <div class="ctx-divider"></div>
+    <div class="ctx-urgency-row">
+      <div class="ctx-urgency-item u-red">
+        <span class="ctx-urgency-num" id="ctx-red">0</span>
+        <span class="ctx-urgency-lbl">urgent (&lt;90d)</span>
+      </div>
+      <div class="ctx-urgency-item u-yel">
+        <span class="ctx-urgency-num" id="ctx-yel">0</span>
+        <span class="ctx-urgency-lbl">plan now (90–180d)</span>
+      </div>
+      <div class="ctx-urgency-item u-grn">
+        <span class="ctx-urgency-num" id="ctx-grn">0</span>
+        <span class="ctx-urgency-lbl">on radar (&gt;180d)</span>
+      </div>
+      <div class="ctx-urgency-item u-pur">
+        <span class="ctx-urgency-num" id="ctx-info">0</span>
+        <span class="ctx-urgency-lbl">feature releases</span>
+      </div>
+    </div>
+    <div class="ctx-all-clear" id="ctx-all-clear">
+      ✅ No active retirements or breaking changes in External ID right now. The tracker will surface them here as soon as Microsoft announces any.
+    </div>
+  </div>
+
+  <!-- Tenant Profile Panel -->
+  <div class="profile-panel" id="profilePanel">
+    <button class="profile-toggle" onclick="toggleProfile()">
+      <span>🎯 &nbsp;My Tenant Profile — personalise this feed</span>
+      <span class="profile-toggle-right">
+        <span class="profile-badge" id="profileBadge">Profile active</span>
+        <span class="profile-toggle-icon" id="profileIcon">▼</span>
+      </span>
+    </button>
+    <div class="profile-body" id="profileBody">
+      <p class="profile-intro">
+        <strong style="color:var(--text)">How it works:</strong> tick the features that apply to your tenant, then click <em>Save profile &amp; filter</em>. The tracker will instantly highlight every change relevant to your setup with a <strong style="color:var(--accent)">🎯 Affects your tenant</strong> badge, and a new filter button lets you view only those changes.<br><br>
+        <strong style="color:var(--grn)">🔒 Privacy:</strong> your selections are saved exclusively in your browser's localStorage — the same mechanism websites use to remember your preferences. <strong>No data is transmitted to any server, collected, stored, or shared.</strong> There is no account, no tracking, and no analytics tied to your choices. You can verify this yourself: open browser DevTools → Application → Local Storage → <code style="color:var(--accent);font-size:0.72rem">entratracker.aboutcloud.io</code> and you will see your profile stored only there.
+      </p>
+      <div class="profile-grid">
+        <label class="profile-item">
+          <input type="checkbox" id="p-hybrid"> <label for="p-hybrid">Hybrid Identity (Entra Connect)</label>
+        </label>
+        <label class="profile-item">
+          <input type="checkbox" id="p-adfs"> <label for="p-adfs">ADFS / Federation</label>
+        </label>
+        <label class="profile-item">
+          <input type="checkbox" id="p-legacy"> <label for="p-legacy">Legacy Authentication in use</label>
+        </label>
+        <label class="profile-item">
+          <input type="checkbox" id="p-b2b"> <label for="p-b2b">Guest / B2B Users</label>
+        </label>
+        <label class="profile-item">
+          <input type="checkbox" id="p-ca"> <label for="p-ca">Conditional Access policies</label>
+        </label>
+        <label class="profile-item">
+          <input type="checkbox" id="p-intune"> <label for="p-intune">Intune / MDM enrolled</label>
+        </label>
+        <label class="profile-item">
+          <input type="checkbox" id="p-pim"> <label for="p-pim">PIM (Privileged Identity Mgmt)</label>
+        </label>
+        <label class="profile-item">
+          <input type="checkbox" id="p-passkey"> <label for="p-passkey">Passkeys / FIDO2 enabled</label>
+        </label>
+        <label class="profile-item">
+          <input type="checkbox" id="p-gsa"> <label for="p-gsa">Global Secure Access</label>
+        </label>
+        <label class="profile-item">
+          <input type="checkbox" id="p-sspr"> <label for="p-sspr">Self-Service Password Reset</label>
+        </label>
+        <label class="profile-item">
+          <input type="checkbox" id="p-mfa"> <label for="p-mfa">Per-user MFA enforcement</label>
+        </label>
+        <label class="profile-item">
+          <input type="checkbox" id="p-externalid"> <label for="p-externalid"><span style="color:#c084fc;margin-right:0.3rem">🟣</span>External ID / B2B / B2C</label>
+        </label>
+      </div>
+      <div class="profile-actions">
+        <button class="profile-save" onclick="saveProfile()">Save profile &amp; filter</button>
+        <button class="profile-reset" onclick="resetProfile()">Reset</button>
+      </div>
+      <p class="profile-note">⚡ Stored in your browser only · No account needed · Reset anytime · Anonymous feature counts (e.g. "hybrid: yes") sent to our self-hosted Umami analytics — no personal data, no tenant names</p>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <details class="legend">
+    <summary class="legend-toggle">
+      ℹ️ &nbsp;How to read this tracker
+      <span class="legend-toggle-icon">▼</span>
+    </summary>
+    <div class="legend-body">
+      <div class="legend-grid">
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <div class="legend-dot red"></div>
+            <span class="legend-badge-name" style="color:var(--red)">🔴 Red — Action required</span>
+          </div>
+          <div class="legend-desc">Something is retiring or a breaking change is imminent. Check the deadline and act before it stops working silently.</div>
+        </div>
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <div class="legend-dot yellow"></div>
+            <span class="legend-badge-name" style="color:var(--yel)">🟡 Yellow — Review recommended</span>
+          </div>
+          <div class="legend-desc">A change may affect your environment. No immediate break but worth reviewing your configuration.</div>
+        </div>
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <div class="legend-dot green"></div>
+            <span class="legend-badge-name" style="color:var(--grn)">🟢 Green — Informational</span>
+          </div>
+          <div class="legend-desc">New capability or role available. No action required unless you want to adopt it.</div>
+        </div>
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <span class="legend-badge-name" style="color:var(--muted)">⚫ Expired</span>
+          </div>
+          <div class="legend-desc">Deadline has passed. Shown for reference — hidden by default, use the toggle to display.</div>
+        </div>
+
+        <hr class="legend-divider">
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <span class="legend-badge-name" style="color:var(--red)">RETIRING</span>
+          </div>
+          <div class="legend-desc">Feature or API being removed from Microsoft Entra ID or Azure. Migrate before the deadline shown.</div>
+        </div>
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <span class="legend-badge-name" style="color:var(--yel)">BREAKING</span>
+          </div>
+          <div class="legend-desc">Configuration or script may break. Action required before the date shown — test in report-only mode first.</div>
+        </div>
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <span class="legend-badge-name" style="color:var(--pur)">PREVIEW</span>
+          </div>
+          <div class="legend-desc">Feature in public or private preview. Not recommended for production without thorough testing and a rollback plan.</div>
+        </div>
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <span class="legend-badge-name" style="color:var(--grn)">NEW</span>
+          </div>
+          <div class="legend-desc">New feature or capability released to general availability. Informational — evaluate for adoption.</div>
+        </div>
+
+      </div>
+    </div>
+  </details>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button class="fbtn active" data-f="all">All</button>
+    <button class="fbtn" data-f="retirement">Retiring</button>
+    <button class="fbtn" data-f="breaking">Breaking</button>
+    <button class="fbtn" data-f="preview">Preview</button>
+    <button class="fbtn" data-f="new_feature">New</button>
+    <button class="fbtn ext-id-btn" data-f="external-id" id="btn-extid">🟣 External ID</button>
+    <button class="fbtn" data-f="expired">Expired</button>
+    <button class="fbtn" data-f="tenant" id="btn-tenant" style="display:none;color:var(--accent);border-color:rgba(88,166,255,.4)">🎯 My Tenant</button>
+    <label class="toggle-wrap">
+      <input type="checkbox" id="hide-expired" checked>
+      Hide expired
+    </label>
+    <div class="search-wrap">
+      <input type="text" id="search" class="search-input" placeholder="Search changes..." autocomplete="off">
+    </div>
+  </div>
+
+  <!-- Count -->
+  <div class="count-lbl" id="count" style="display:none">
+    Showing <strong id="shown">0</strong> of <strong id="total">0</strong> changes
+  </div>
+
+  <!-- List -->
+  <div class="entry-list" id="list">
+    <div class="state-msg">
+      <div class="spinner"></div><br>Fetching Microsoft Entra changes...
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-text">
+      Sources:
+      <a href="https://learn.microsoft.com/en-us/entra/fundamentals/whats-new" target="_blank">Entra What's New</a>
+      ·
+      <a href="https://learn.microsoft.com/en-us/fslogix/overview-release-notes" target="_blank">FSLogix Docs</a>
+      ·
+      <a href="https://learn.microsoft.com/en-us/entra/external-id/whats-new-docs" target="_blank">External ID Docs</a>
+      ·
+      <a href="https://learn.microsoft.com/en-us/azure/active-directory-b2c/whats-new-docs" target="_blank">B2C Docs</a>
+    </div>
+    <div class="footer-text">
+      Built by <a href="https://aboutcloud.io" target="_blank">AboutCloud.io</a>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+'use strict';
+
+const API = 'https://api.aboutcloud.io/entra-tracker';
+
+const ARTICLES = {
+  'risk polic':      'https://aboutcloud.io/entra-id-protection-unified-risk-signals',
+  'unified risk':    'https://aboutcloud.io/entra-id-protection-unified-risk-signals',
+  'passkey':         'https://aboutcloud.io/entra-passkey-profiles-migration-2026',
+  'prompt shield':   'https://aboutcloud.io/entra-prompt-shield-internet-access',
+  'internet access': 'https://aboutcloud.io/entra-prompt-shield-internet-access',
+  'agent id':        'https://aboutcloud.io/who-governs-the-ai-agents-new-microsoft-entra-roles-for-the-agentic-era',
+  'agent registry':  'https://aboutcloud.io/who-governs-the-ai-agents-new-microsoft-entra-roles-for-the-agentic-era',
+  'risk polic retir':'https://aboutcloud.io/entra-id-protection-unified-risk-signals',
+};
+
+// Profile keyword matching — maps each profile flag to keywords in change titles/descriptions
+const PROFILE_KEYWORDS = {
+  'p-hybrid':    ['hybrid','entra connect','ad connect','azure ad connect','on-premises','on-prem','seamless sso','password hash','pass-through','writeback'],
+  'p-adfs':      ['adfs','ad fs','federation','federated','ws-fed','saml','claim','relying party'],
+  'p-legacy':    ['legacy auth','basic auth','smtp auth','imap','pop3','exchange online','legacy protocol','modern auth','activesync','app password'],
+  'p-b2b':       ['guest','b2b','external user','cross-tenant','external identit','invitation','partner'],
+  'p-ca':        ['conditional access','named location','sign-in frequency','session control','authentication strength','compliance','grant control'],
+  'p-intune':    ['intune','mdm','mobile device','compliance polic','device enroll','microsoft endpoint','configuration profile'],
+  'p-pim':       ['pim','privileged identity','just-in-time','eligible','activation','privileged role','jit'],
+  'p-passkey':   ['passkey','fido','fido2','windows hello','phishing-resistant','authentication strength','webauthn'],
+  'p-gsa':       ['global secure access','private access','internet access','gsa','network access','secure service edge','sse','entra private'],
+  'p-sspr':      ['sspr','self-service password','password reset','password writeback','combined registration','authentication method'],
+  'p-mfa':       ['mfa','multi-factor','multifactor','authenticator','verification','second factor','authentication method','per-user mfa'],
+  'p-externalid':['external identit','b2c','ciam','customer identity','social identity','self-service sign','external tenant'],
+};
+
+const PROFILE_KEY = 'entra_tracker_profile_v1';
+
+let all=[], af='all', as_=null, sq='', hideExpired=true;
+let profile = {};
+
+// ── PROFILE FUNCTIONS ─────────────────────────────────────────────────────────
+
+function loadProfile() {
+  try {
+    const saved = localStorage.getItem(PROFILE_KEY);
+    profile = saved ? JSON.parse(saved) : {};
+  } catch(e) { profile = {}; }
+  applyProfileToUI();
+}
+
+function applyProfileToUI() {
+  Object.keys(PROFILE_KEYWORDS).forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.checked = !!profile[id];
+  });
+  const hasProfile = Object.values(profile).some(v => v);
+  document.getElementById('profileBadge').classList.toggle('on', hasProfile);
+  const btnTenant = document.getElementById('btn-tenant');
+  const statTenant = document.getElementById('stat-tenant');
+  if(btnTenant) btnTenant.style.display = hasProfile ? '' : 'none';
+  if(statTenant) statTenant.style.display = hasProfile ? '' : 'none';
+}
+
+function saveProfile() {
+  Object.keys(PROFILE_KEYWORDS).forEach(id => {
+    const el = document.getElementById(id);
+    if(el) profile[id] = el.checked;
+  });
+  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch(e){}
+  applyProfileToUI();
+  updateStats(all);
+  render();
+
+  // Fire anonymous Umami event — feature flags only, no personal data
+  if(typeof umami !== 'undefined') {
+    umami.track('tenant-profile-saved', {
+      hybrid:     !!profile['p-hybrid'],
+      adfs:       !!profile['p-adfs'],
+      legacy_auth:!!profile['p-legacy'],
+      b2b:        !!profile['p-b2b'],
+      ca:         !!profile['p-ca'],
+      intune:     !!profile['p-intune'],
+      pim:        !!profile['p-pim'],
+      passkey:    !!profile['p-passkey'],
+      gsa:        !!profile['p-gsa'],
+      sspr:       !!profile['p-sspr'],
+      mfa:        !!profile['p-mfa'],
+      externalid: !!profile['p-externalid'],
+      features_enabled: Object.values(profile).filter(v=>v).length
+    });
+  }
+
+  // Close panel
+  document.getElementById('profilePanel').classList.remove('open');
+}
+
+function resetProfile() {
+  profile = {};
+  try { localStorage.removeItem(PROFILE_KEY); } catch(e){}
+  applyProfileToUI();
+  if(af === 'tenant') {
+    af = 'all';
+    document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
+  }
+  updateStats(all);
+  render();
+  if(typeof umami !== 'undefined') umami.track('tenant-profile-reset');
+}
+
+function toggleProfile() {
+  document.getElementById('profilePanel').classList.toggle('open');
+}
+
+// Expose to global for onclick
+window.toggleProfile = toggleProfile;
+window.saveProfile   = saveProfile;
+window.resetProfile  = resetProfile;
+
+function itemMatchesProfile(item) {
+  const hasProfile = Object.values(profile).some(v => v);
+  if(!hasProfile) return false;
+  const text = ((item.title || '') + ' ' + (item.description || '')).toLowerCase();
+  for(const [id, keywords] of Object.entries(PROFILE_KEYWORDS)) {
+    if(profile[id] && keywords.some(kw => text.includes(kw))) return true;
+  }
+  return false;
+}
+
+// ── EXISTING FUNCTIONS ────────────────────────────────────────────────────────
+
+function findArt(t){
+  const l=t.toLowerCase();
+  for(const[k,u] of Object.entries(ARTICLES)) if(l.includes(k)) return u;
+  return null;
+}
+
+function esc(s){
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function catLabel(c){
+  return {retirement:'Retiring',breaking:'Breaking',preview:'Preview',new_feature:'New'}[c]||c;
+}
+
+function impLabel(i){ return i[0].toUpperCase()+i.slice(1)+' impact'; }
+
+function cdHTML(item){
+  if(!item.deadline) return '';
+  if(item.status==='expired'){
+    return `<div class="cd-num s-exp">EXPIRED</div><div class="cd-date">${item.deadline}</div>`;
+  }
+  const d = item.daysRemaining;
+  const sc = item.status==='red'?'s-red':item.status==='yellow'?'s-yel':'s-grn';
+  return `<div class="cd-num ${sc}">${d}</div>
+          <div class="cd-lbl">day${d!==1?'s':''} left</div>
+          <div class="cd-date">${item.deadline}</div>`;
+}
+
+function entryHTML(item){
+  const art      = findArt(item.title) || item.articleUrl;
+  const ms       = item.link ? `<a class="lnk" href="${esc(item.link)}" target="_blank" rel="noopener">MS Docs ↗</a>` : '';
+  const ar       = art       ? `<a class="lnk art" href="${esc(art)}" target="_blank">Read post ↗</a>` : '';
+  const sc       = item.status==='red'?'s-red':item.status==='yellow'?'s-yel':item.status==='green'?'s-grn':'s-exp';
+  const affected = itemMatchesProfile(item);
+  const tenantBadge = affected ? `<span class="badge i-tenant">🎯 Affects your tenant</span>` : '';
+  const extIdBadge  = item.namespace === 'external-id' ? `<span class="badge i-external-id">🟣 External ID</span>` : '';
+
+  return `<div class="entry ${sc}">
+    <div class="entry-strip"></div>
+    <div class="entry-body">
+      <div class="entry-title">${esc(item.title)}</div>
+      <div class="entry-desc">${esc(item.description||'')}</div>
+      <div class="entry-meta">
+        <span class="badge c-${item.category}">${catLabel(item.category)}</span>
+        <span class="badge i-${item.impact}">${impLabel(item.impact)}</span>
+        ${extIdBadge}
+        ${tenantBadge}
+        ${ms}${ar}
+      </div>
+    </div>
+    <div class="entry-right">${cdHTML(item)}</div>
+  </div>`;
+}
+
+function getFiltered(){
+  return all.filter(i => {
+    if(hideExpired && i.status === 'expired' && af !== 'expired' && as_ !== 'expired') return false;
+    if(af === 'expired' && i.status !== 'expired') return false;
+    if(af === 'tenant' && !itemMatchesProfile(i)) return false;
+    if(af === 'external-id' && i.namespace !== 'external-id') return false;
+    if(af !== 'all' && af !== 'expired' && af !== 'tenant' && af !== 'external-id' && i.category !== af) return false;
+    if(as_ && as_ !== 'tenant' && as_ !== 'external-id' && i.status !== as_) return false;
+    if(sq && !i.title.toLowerCase().includes(sq) && !(i.description||'').toLowerCase().includes(sq)) return false;
+    return true;
+  });
+}
+
+function render(){
+  const items = getFiltered();
+  const list  = document.getElementById('list');
+  list.innerHTML = items.length
+    ? items.map(entryHTML).join('')
+    : '<div class="state-msg">No changes match your filter.</div>';
+  document.getElementById('shown').textContent = items.length;
+  document.getElementById('total').textContent = all.length;
+  document.getElementById('count').style.display = 'block';
+
+  // Show/hide External ID context banner
+  const ctx = document.getElementById('extid-ctx');
+  if(ctx) ctx.classList.toggle('visible', af === 'external-id');
+
+  // Sync External ID card active state
+  const extCard = document.getElementById('stat-extid');
+  if(extCard) extCard.classList.toggle('active', af === 'external-id');
+}
+
+function updateStats(items){
+  const c = {red:0, yellow:0, green:0, expired:0};
+  items.forEach(i => { if(c[i.status]!==undefined) c[i.status]++; });
+  document.getElementById('sn-red').textContent = c.red;
+  document.getElementById('sn-yel').textContent = c.yellow;
+  document.getElementById('sn-grn').textContent = c.green;
+  document.getElementById('sn-exp').textContent = c.expired;
+  document.getElementById('stats').style.display = 'grid';
+
+  // External ID breakdown
+  const extItems = items.filter(i => i.namespace === 'external-id');
+  const extCount = extItems.length;
+  const extUrgent = extItems.filter(i => i.status === 'red').length;
+  const extPlan   = extItems.filter(i => i.status === 'yellow').length;
+  const extOnradar= extItems.filter(i => i.status === 'green' && i.deadline).length;
+  const extInfo   = extItems.filter(i => !i.deadline || i.status === 'green').length;
+
+  document.getElementById('sn-extid').textContent = extCount;
+  document.getElementById('extid-row').style.display = extCount > 0 ? 'block' : 'none';
+
+  // Pills on the External ID card
+  const pillsEl = document.getElementById('extid-urgency-pills');
+  const pills = [];
+  if(extUrgent > 0) pills.push(`<span class="extid-pill urgent">🔴 ${extUrgent} urgent</span>`);
+  if(extPlan   > 0) pills.push(`<span class="extid-pill plan">🟡 ${extPlan} plan now</span>`);
+  if(extOnradar> 0) pills.push(`<span class="extid-pill info">🟢 ${extOnradar} on radar</span>`);
+  if(extUrgent === 0 && extPlan === 0)
+    pills.push(`<span class="extid-pill good">✅ No active retirements</span>`);
+  pills.push(`<span class="extid-pill info">${extInfo} feature release${extInfo!==1?'s':''}</span>`);
+  pillsEl.innerHTML = pills.join('');
+
+  // Context banner counts
+  document.getElementById('ctx-red').textContent  = extUrgent;
+  document.getElementById('ctx-yel').textContent  = extPlan;
+  document.getElementById('ctx-grn').textContent  = extOnradar;
+  document.getElementById('ctx-info').textContent = extItems.filter(i => !i.deadline).length;
+
+  const allClear = document.getElementById('ctx-all-clear');
+  allClear.classList.toggle('show', extUrgent === 0 && extPlan === 0);
+
+  // Tenant stat
+  const tenantCount = items.filter(i => itemMatchesProfile(i)).length;
+  document.getElementById('sn-tenant').textContent = tenantCount;
+}
+
+// Filter buttons
+document.querySelectorAll('.fbtn').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.fbtn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    af   = b.dataset.f;
+    as_  = null;
+    document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
+    render();
+  });
+});
+
+// Stat card click — filter by urgency or namespace
+document.querySelectorAll('.stat-card').forEach(c => {
+  c.addEventListener('click', () => {
+    const sf = c.dataset.sf;
+    if(sf === 'tenant') {
+      if(af === 'tenant') {
+        af = 'all';
+        document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
+        c.classList.remove('active');
+      } else {
+        af = 'tenant';
+        document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'tenant'));
+        document.querySelectorAll('.stat-card').forEach(x => x.classList.remove('active'));
+        c.classList.add('active');
+        as_ = null;
+        if(typeof umami !== 'undefined') umami.track('tenant-filter-used');
+      }
+    } else if(sf === 'external-id') {
+      if(af === 'external-id') {
+        af = 'all';
+        document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
+        c.classList.remove('active');
+      } else {
+        af = 'external-id';
+        document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'external-id'));
+        document.querySelectorAll('.stat-card').forEach(x => x.classList.remove('active'));
+        c.classList.add('active');
+        as_ = null;
+        if(typeof umami !== 'undefined') umami.track('extid-filter-used');
+      }
+    } else {
+      if(as_ === sf){
+        as_ = null;
+        c.classList.remove('active');
+      } else {
+        as_ = sf;
+        document.querySelectorAll('.stat-card').forEach(x => x.classList.remove('active'));
+        c.classList.add('active');
+      }
+      if(af === 'tenant' || af === 'external-id') {
+        af = 'all';
+        document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
+      }
+    }
+    render();
+  });
+});
+
+// External ID namespace card click
+const extCard = document.getElementById('stat-extid');
+if(extCard) extCard.addEventListener('click', () => {
+  if(af === 'external-id') {
+    af = 'all';
+    document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
+  } else {
+    af = 'external-id';
+    document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'external-id'));
+    document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
+    as_ = null;
+    if(typeof umami !== 'undefined') umami.track('extid-filter-used');
+  }
+  render();
+});
+
+// Search
+document.getElementById('search').addEventListener('input', e => {
+  sq = e.target.value.toLowerCase().trim();
+  render();
+});
+
+// Hide expired toggle
+document.getElementById('hide-expired').addEventListener('change', e => {
+  hideExpired = e.target.checked;
+  render();
+});
+
+// Load data
+async function load(){
+  try {
+    const res  = await fetch(API, { mode: 'cors', credentials: 'omit' });
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    all = data.items || [];
+
+    const d = new Date(data.lastUpdated);
+    document.getElementById('upd').textContent = 'Updated ' + d.toLocaleString('en-GB', {
+      day:'2-digit', month:'short', year:'numeric',
+      hour:'2-digit', minute:'2-digit', timeZone:'UTC'
+    }) + ' UTC';
+
+    loadProfile();
+    updateStats(all);
+    render();
+
+    if(typeof umami !== 'undefined'){
+      umami.track('entra-tracker-load', { count: all.length });
+    }
+
+  } catch(err){
+    document.getElementById('list').innerHTML = `
+      <div class="state-msg">
+        ⚠ Could not load tracker data — ${esc(err.message)}<br><br>
+        <a class="lnk" href="https://learn.microsoft.com/en-us/entra/fundamentals/whats-new" target="_blank">
+          View Microsoft Entra What's New directly ↗
+        </a>
+      </div>`;
+    document.getElementById('upd').textContent = 'Update failed';
+  }
+}
+
+load();
+})();
+</script>
+
+<!-- Cloudflare Pages Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "cdddb9daba134409a833f6f368aabf06"}'></script><!-- Cloudflare Pages Analytics --></body>
+</html>

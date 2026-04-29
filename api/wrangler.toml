@@ -2,6 +2,11 @@ name = "entra-tracker"
 main = "worker.js"
 compatibility_date = "2026-03-31"
 
+# Cron trigger — scrapes Microsoft Learn + RSS every 4 hours
+[triggers]
+crons = ["0 */4 * * *"]
+
+# KV binding
 [[kv_namespaces]]
 binding = "ENTRA_CACHE"
 id = "7f7ec741df00421cbdefc462630c7b75"
