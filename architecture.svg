@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 420" font-family="system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="src1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00a4ef"/>
+      <stop offset="100%" stop-color="#0078d4"/>
+    </linearGradient>
+    <linearGradient id="src2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f58423"/>
+      <stop offset="100%" stop-color="#e06b10"/>
+    </linearGradient>
+    <linearGradient id="worker" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6e40c9"/>
+      <stop offset="100%" stop-color="#553098"/>
+    </linearGradient>
+    <linearGradient id="kv" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0366d6"/>
+      <stop offset="100%" stop-color="#0250a3"/>
+    </linearGradient>
+    <linearGradient id="pages" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#28a745"/>
+      <stop offset="100%" stop-color="#1a7f32"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrowD" markerWidth="7" markerHeight="10" refX="3.5" refY="10" orient="auto">
+      <polygon points="0 0, 7 0, 3.5 10" fill="#8b949e"/>
+    </marker>
+    <marker id="arrowR" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#8b949e"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="720" height="420" rx="12" fill="url(#bg)"/>
+  <rect width="720" height="420" rx="12" fill="none" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Title -->
+  <text x="360" y="28" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="700">Entra Tracker — Architecture</text>
+  <text x="360" y="44" text-anchor="middle" fill="#484f58" font-size="10">4 Sources · Parallel Fetch · Cron 0 */4 * * *</text>
+
+  <!-- Source Boxes Row -->
+  <!-- Source 1 -->
+  <rect x="30" y="60" width="155" height="50" rx="6" fill="url(#src1)" opacity="0.12"/>
+  <rect x="30" y="60" width="155" height="50" rx="6" fill="none" stroke="#00a4ef" stroke-width="1.2"/>
+  <text x="107" y="80" text-anchor="middle" fill="#00a4ef" font-size="9" font-weight="600">1. Entra Docs</text>
+  <text x="107" y="98" text-anchor="middle" fill="#8b949e" font-size="8">whats-new.md</text>
+
+  <!-- Source 2 -->
+  <rect x="200" y="60" width="155" height="50" rx="6" fill="url(#src2)" opacity="0.12"/>
+  <rect x="200" y="60" width="155" height="50" rx="6" fill="none" stroke="#f58423" stroke-width="1.2"/>
+  <text x="277" y="80" text-anchor="middle" fill="#f58423" font-size="9" font-weight="600">2. TechCommunity</text>
+  <text x="277" y="98" text-anchor="middle" fill="#8b949e" font-size="8">RSS Feed</text>
+
+  <!-- Source 3 -->
+  <rect x="370" y="60" width="155" height="50" rx="6" fill="url(#src1)" opacity="0.12"/>
+  <rect x="370" y="60" width="155" height="50" rx="6" fill="none" stroke="#00a4ef" stroke-width="1.2"/>
+  <text x="447" y="80" text-anchor="middle" fill="#00a4ef" font-size="9" font-weight="600">3. External ID</text>
+  <text x="447" y="98" text-anchor="middle" fill="#8b949e" font-size="8">whats-new-docs.md</text>
+
+  <!-- Source 4 -->
+  <rect x="540" y="60" width="155" height="50" rx="6" fill="url(#src1)" opacity="0.12"/>
+  <rect x="540" y="60" width="155" height="50" rx="6" fill="none" stroke="#00a4ef" stroke-width="1.2"/>
+  <text x="617" y="80" text-anchor="middle" fill="#00a4ef" font-size="9" font-weight="600">4. B2C Docs</text>
+  <text x="617" y="98" text-anchor="middle" fill="#8b949e" font-size="8">whats-new-docs.md</text>
+
+  <!-- Arrows from sources to worker -->
+  <line x1="107" y1="110" x2="107" y2="145" stroke="#8b949e" stroke-width="1" marker-end="url(#arrowD)"/>
+  <line x1="277" y1="110" x2="277" y2="145" stroke="#8b949e" stroke-width="1" marker-end="url(#arrowD)"/>
+  <line x1="447" y1="110" x2="447" y2="145" stroke="#8b949e" stroke-width="1" marker-end="url(#arrowD)"/>
+  <line x1="617" y1="110" x2="617" y2="145" stroke="#8b949e" stroke-width="1" marker-end="url(#arrowD)"/>
+
+  <!-- Worker Box (big) -->
+  <rect x="180" y="150" width="360" height="90" rx="10" fill="url(#worker)" opacity="0.12"/>
+  <rect x="180" y="150" width="360" height="90" rx="10" fill="none" stroke="#6e40c9" stroke-width="2"/>
+  <text x="360" y="175" text-anchor="middle" fill="#6e40c9" font-size="14" font-weight="700">Cloudflare Worker: entra-tracker</text>
+  <text x="360" y="195" text-anchor="middle" fill="#8b949e" font-size="10">fetch + scheduled · Parallel source scraping</text>
+  <!-- Process labels inside worker -->
+  <rect x="200" y="204" width="80" height="22" rx="4" fill="#30363d"/>
+  <text x="240" y="219" text-anchor="middle" fill="#e6edf3" font-size="9">Parse Markdown</text>
+  <rect x="290" y="204" width="70" height="22" rx="4" fill="#30363d"/>
+  <text x="325" y="219" text-anchor="middle" fill="#e6edf3" font-size="9">Parse RSS</text>
+  <rect x="370" y="204" width="80" height="22" rx="4" fill="#30363d"/>
+  <text x="410" y="219" text-anchor="middle" fill="#e6edf3" font-size="9">Classify</text>
+  <rect x="460" y="204" width="60" height="22" rx="4" fill="#30363d"/>
+  <text x="490" y="219" text-anchor="middle" fill="#e6edf3" font-size="9">Dedup</text>
+
+  <!-- Arrows from worker to KV + Pages -->
+  <line x1="280" y1="240" x2="200" y2="300" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arrowD)"/>
+  <text x="230" y="272" fill="#484f58" font-size="8">cache</text>
+
+  <line x1="440" y1="240" x2="500" y2="300" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arrowD)"/>
+  <text x="475" y="272" fill="#484f58" font-size="8">serve API</text>
+
+  <!-- KV Box -->
+  <rect x="80" y="305" width="240" height="65" rx="8" fill="url(#kv)" opacity="0.12"/>
+  <rect x="80" y="305" width="240" height="65" rx="8" fill="none" stroke="#0366d6" stroke-width="1.5"/>
+  <text x="200" y="328" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">KV: ENTRA_CACHE</text>
+  <text x="200" y="346" text-anchor="middle" fill="#8b949e" font-size="9">entra_tracker_v3 (single key)</text>
+  <text x="200" y="362" text-anchor="middle" fill="#484f58" font-size="8">TTL 4h · All articles + metadata</text>
+
+  <!-- Pages Box -->
+  <rect x="380" y="305" width="260" height="65" rx="8" fill="url(#pages)" opacity="0.12"/>
+  <rect x="380" y="305" width="260" height="65" rx="8" fill="none" stroke="#28a745" stroke-width="1.5"/>
+  <text x="510" y="328" text-anchor="middle" fill="#28a745" font-size="11" font-weight="700">Cloudflare Pages</text>
+  <text x="510" y="346" text-anchor="middle" fill="#8b949e" font-size="9">entratracker.aboutcloud.io · tracker.aboutcloud.io</text>
+  <text x="510" y="362" text-anchor="middle" fill="#8b949e" font-size="8">Type badges · Category pills · Date picker · Dark theme</text>
+
+  <!-- Users -->
+  <text x="360" y="395" text-anchor="middle" fill="#58a6ff" font-size="10">🔍 Users — Search · Filter by Type/Category · Date Range</text>
+
+  <!-- Decorations -->
+  <circle cx="30" cy="30" r="3" fill="#30363d"/>
+  <circle cx="42" cy="30" r="3" fill="#30363d"/>
+  <circle cx="30" cy="42" r="3" fill="#30363d"/>
+  <circle cx="690" cy="30" r="3" fill="#30363d"/>
+  <circle cx="678" cy="30" r="3" fill="#30363d"/>
+  <circle cx="690" cy="42" r="3" fill="#30363d"/>
+
+  <text x="360" y="415" text-anchor="middle" fill="#30363d" font-size="9">Auto-updated every 4 hours · €0/month · Open Source</text>
+</svg>

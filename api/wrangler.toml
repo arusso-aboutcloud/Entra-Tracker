@@ -2,14 +2,14 @@ name = "entra-tracker"
 main = "worker.js"
 compatibility_date = "2026-03-31"
 
-# Cron trigger — scrapes Microsoft Learn + RSS every 4 hours
+# Cron trigger — scrapes 4 Microsoft sources every 4 hours
 [triggers]
 crons = ["0 */4 * * *"]
 
-# KV binding
+# KV binding (set via `wrangler kv:namespace create` or dashboard)
 [[kv_namespaces]]
 binding = "ENTRA_CACHE"
-id = "7f7ec741df00421cbdefc462630c7b75"
+id = "YOUR_KV_NAMESPACE_ID"
 
 [observability]
 enabled = true
