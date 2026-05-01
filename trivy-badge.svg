@@ -16,5 +16,5 @@
     <animate attributeName="r" values="4;6;4" dur="1.5s" repeatCount="indefinite"/>
     <animate attributeName="opacity" values="0.6;0.2;0.6" dur="1.5s" repeatCount="indefinite"/>
   </circle>
-  <text x="380" y="14" fill="#484f58" font-family="monospace" font-size="8" text-anchor="end" dominant-baseline="middle">2026-05-01 08:56 UTC</text>
+  <text x="380" y="14" fill="#484f58" font-family="monospace" font-size="8" text-anchor="end" dominant-baseline="middle">2026-05-01 16:32 UTC</text>
 </svg>
