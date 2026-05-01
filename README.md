@@ -166,7 +166,7 @@ MIT — see [LICENSE](./LICENSE) for full text.
 
 > 💼 **Using this commercially?** MIT licensed and free for personal, educational, and open-source projects.  
 > Building something commercial (SaaS, managed services, reselling)? I'd love to chat —  
-> [about the author](https://aboutcloud.io/author/) · [get in touch](https://aboutcloud.io/contact)
+> [about the author](https://aboutcloud.io/author/) · [contact me](https://aboutcloud.io/author/)
 
 ---
 
