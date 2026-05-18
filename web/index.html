@@ -253,10 +253,18 @@ nav a.active { color: var(--accent); font-weight: 600; }
   letter-spacing: 0.05em;
 }
 
-.stat-card.s-red .stat-num    { color: var(--red); }
-.stat-card.s-yel .stat-num    { color: var(--yel); }
-.stat-card.s-grn .stat-num    { color: var(--grn); }
-.stat-card.s-grey .stat-num   { color: var(--muted); }
+/* ── Stat/countdown number glow animations ── */
+@keyframes sn-glow-red  { 0%,100%{text-shadow:0 0 10px rgba(255,123,114,0.9),0 0 28px rgba(255,123,114,0.5)} 50%{text-shadow:0 0 3px rgba(255,123,114,0.25),0 0 6px rgba(255,123,114,0.08)} }
+@keyframes sn-glow-yel  { 0%,100%{text-shadow:0 0 10px rgba(227,179,65,0.9), 0 0 28px rgba(227,179,65,0.5)}  50%{text-shadow:0 0 3px rgba(227,179,65,0.25), 0 0 6px rgba(227,179,65,0.08)} }
+@keyframes sn-glow-grn  { 0%,100%{text-shadow:0 0 10px rgba(63,185,80,0.9),  0 0 28px rgba(63,185,80,0.5)}   50%{text-shadow:0 0 3px rgba(63,185,80,0.25),  0 0 6px rgba(63,185,80,0.08)} }
+@keyframes sn-glow-grey { 0%,100%{text-shadow:0 0 8px  rgba(139,148,158,0.7),0 0 20px rgba(139,148,158,0.35)} 50%{text-shadow:0 0 3px rgba(139,148,158,0.15),0 0 5px rgba(139,148,158,0.05)} }
+@keyframes sn-glow-blue { 0%,100%{text-shadow:0 0 10px rgba(88,166,255,0.9), 0 0 28px rgba(88,166,255,0.5)}  50%{text-shadow:0 0 3px rgba(88,166,255,0.25), 0 0 6px rgba(88,166,255,0.08)} }
+@keyframes sn-glow-purp { 0%,100%{text-shadow:0 0 10px rgba(192,132,252,0.9),0 0 28px rgba(192,132,252,0.5)} 50%{text-shadow:0 0 3px rgba(192,132,252,0.25),0 0 6px rgba(192,132,252,0.08)} }
+
+.stat-card.s-red  .stat-num    { color: var(--red);    animation: sn-glow-red  3s ease-in-out infinite; }
+  .stat-card.s-yel .stat-num    { color: var(--yel);    animation: sn-glow-yel  3s ease-in-out infinite 0.3s; }
+  .stat-card.s-grn .stat-num    { color: var(--grn);    animation: sn-glow-grn  3s ease-in-out infinite 0.6s; }
+  .stat-card.s-grey .stat-num   { color: var(--muted);  animation: sn-glow-grey 3s ease-in-out infinite 0.9s; }
 
 /* ── External ID namespace row ─────────────────────────────────────────── */
 .stat-extid-row {
@@ -649,9 +657,9 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
   text-align: right;
 }
 
-.cd-num.s-red { color: var(--red); }
-.cd-num.s-yel { color: var(--yel); }
-.cd-num.s-grn { color: var(--grn); }
+.cd-num.s-red { color: var(--red); animation: sn-glow-red  3s ease-in-out infinite; }
+.cd-num.s-yel { color: var(--yel); animation: sn-glow-yel  3s ease-in-out infinite 0.3s; }
+.cd-num.s-grn { color: var(--grn); animation: sn-glow-grn  3s ease-in-out infinite 0.6s; }
 .cd-num.s-exp { color: var(--muted); font-size: 0.85rem; letter-spacing: 0.05em; }
 
 /* States */
@@ -848,10 +856,10 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
 .fbtn.ext-id-btn.active { background: rgba(192,132,252,.15); border-color: #c084fc; }
 
 /* External ID stat card */
-.stat-card.s-purple .stat-num { color: #c084fc; }
+.stat-card.s-purple .stat-num { color: #c084fc; animation: sn-glow-purp 3s ease-in-out infinite; }
 
 /* Affected stat card */
-.stat-card.s-blue .stat-num { color: var(--accent); }
+.stat-card.s-blue .stat-num { color: var(--accent); animation: sn-glow-blue 3s ease-in-out infinite; }
 
 @media (max-width: 640px) {
   .profile-grid { grid-template-columns: repeat(2, 1fr); }
@@ -1347,7 +1355,7 @@ function entryHTML(item){
 }
 
 function getFiltered(){
-  return all.filter(i => {
+  const items = all.filter(i => {
     if(hideExpired && i.status === 'expired' && af !== 'expired' && as_ !== 'expired') return false;
     if(af === 'expired' && i.status !== 'expired') return false;
     if(af === 'tenant' && !itemMatchesProfile(i)) return false;
@@ -1357,6 +1365,17 @@ function getFiltered(){
     if(sq && !i.title.toLowerCase().includes(sq) && !(i.description||'').toLowerCase().includes(sq)) return false;
     return true;
   });
+  if(as_ === 'green'){
+    const imp = {high:0,medium:1,low:2};
+    items.sort((a,b)=>{
+      const aD=!!a.deadline, bD=!!b.deadline;
+      if(aD&&bD) return a.deadline<b.deadline?-1:a.deadline>b.deadline?1:0;
+      if(aD) return -1;
+      if(bD) return  1;
+      return (imp[a.impact]??3)-(imp[b.impact]??3);
+    });
+  }
+  return items;
 }
 
 function render(){
