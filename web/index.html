@@ -254,12 +254,12 @@ nav a.active { color: var(--accent); font-weight: 600; }
 }
 
 /* ── Stat/countdown number glow animations ── */
-@keyframes sn-glow-red  { 0%,100%{text-shadow:0 0 10px rgba(255,123,114,0.9),0 0 28px rgba(255,123,114,0.5)} 50%{text-shadow:0 0 3px rgba(255,123,114,0.25),0 0 6px rgba(255,123,114,0.08)} }
-@keyframes sn-glow-yel  { 0%,100%{text-shadow:0 0 10px rgba(227,179,65,0.9), 0 0 28px rgba(227,179,65,0.5)}  50%{text-shadow:0 0 3px rgba(227,179,65,0.25), 0 0 6px rgba(227,179,65,0.08)} }
-@keyframes sn-glow-grn  { 0%,100%{text-shadow:0 0 10px rgba(63,185,80,0.9),  0 0 28px rgba(63,185,80,0.5)}   50%{text-shadow:0 0 3px rgba(63,185,80,0.25),  0 0 6px rgba(63,185,80,0.08)} }
-@keyframes sn-glow-grey { 0%,100%{text-shadow:0 0 8px  rgba(139,148,158,0.7),0 0 20px rgba(139,148,158,0.35)} 50%{text-shadow:0 0 3px rgba(139,148,158,0.15),0 0 5px rgba(139,148,158,0.05)} }
-@keyframes sn-glow-blue { 0%,100%{text-shadow:0 0 10px rgba(88,166,255,0.9), 0 0 28px rgba(88,166,255,0.5)}  50%{text-shadow:0 0 3px rgba(88,166,255,0.25), 0 0 6px rgba(88,166,255,0.08)} }
-@keyframes sn-glow-purp { 0%,100%{text-shadow:0 0 10px rgba(192,132,252,0.9),0 0 28px rgba(192,132,252,0.5)} 50%{text-shadow:0 0 3px rgba(192,132,252,0.25),0 0 6px rgba(192,132,252,0.08)} }
+@keyframes sn-glow-red  { 0%,100%{text-shadow:0 0 6px rgba(255,123,114,1.0),0 0 18px rgba(255,123,114,0.85),0 0 45px rgba(255,123,114,0.5),0 0 70px rgba(255,123,114,0.2)} 50%{text-shadow:0 0 4px rgba(255,123,114,0.45),0 0 12px rgba(255,123,114,0.15)} }
+@keyframes sn-glow-yel  { 0%,100%{text-shadow:0 0 6px rgba(227,179,65,1.0), 0 0 18px rgba(227,179,65,0.85), 0 0 45px rgba(227,179,65,0.5), 0 0 70px rgba(227,179,65,0.2)}  50%{text-shadow:0 0 4px rgba(227,179,65,0.45), 0 0 12px rgba(227,179,65,0.15)} }
+@keyframes sn-glow-grn  { 0%,100%{text-shadow:0 0 6px rgba(63,185,80,1.0),  0 0 18px rgba(63,185,80,0.85),  0 0 45px rgba(63,185,80,0.5),  0 0 70px rgba(63,185,80,0.2)}   50%{text-shadow:0 0 4px rgba(63,185,80,0.45),  0 0 12px rgba(63,185,80,0.15)} }
+@keyframes sn-glow-grey { 0%,100%{text-shadow:0 0 6px rgba(139,148,158,0.95),0 0 18px rgba(139,148,158,0.7), 0 0 40px rgba(139,148,158,0.4), 0 0 65px rgba(139,148,158,0.15)} 50%{text-shadow:0 0 4px rgba(139,148,158,0.35),0 0 10px rgba(139,148,158,0.1)} }
+@keyframes sn-glow-blue { 0%,100%{text-shadow:0 0 6px rgba(88,166,255,1.0), 0 0 18px rgba(88,166,255,0.85), 0 0 45px rgba(88,166,255,0.5), 0 0 70px rgba(88,166,255,0.2)}  50%{text-shadow:0 0 4px rgba(88,166,255,0.45), 0 0 12px rgba(88,166,255,0.15)} }
+@keyframes sn-glow-purp { 0%,100%{text-shadow:0 0 6px rgba(192,132,252,1.0),0 0 18px rgba(192,132,252,0.85),0 0 45px rgba(192,132,252,0.5),0 0 70px rgba(192,132,252,0.2)} 50%{text-shadow:0 0 4px rgba(192,132,252,0.45),0 0 12px rgba(192,132,252,0.15)} }
 
 .stat-card.s-red  .stat-num    { color: var(--red);    animation: sn-glow-red  3s ease-in-out infinite; }
   .stat-card.s-yel .stat-num    { color: var(--yel);    animation: sn-glow-yel  3s ease-in-out infinite 0.3s; }
