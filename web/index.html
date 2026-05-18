@@ -117,6 +117,16 @@ nav a.active { color: var(--accent); font-weight: 600; }
   padding: 2.5rem 3rem 5rem;
 }
 
+/* ── Hero glow animations ── */
+@keyframes tracker-title-glow {
+  0%, 100% { text-shadow: 0 0 8px rgba(230,237,243,0.95), 0 0 22px rgba(230,237,243,0.65), 0 0 50px rgba(230,237,243,0.3); }
+  50%       { text-shadow: 0 0 4px rgba(230,237,243,0.45), 0 0 10px rgba(230,237,243,0.2),  0 0 22px rgba(230,237,243,0.08); }
+}
+@keyframes tracker-sub-glow {
+  0%, 100% { text-shadow: 0 0 8px rgba(88,166,255,0.85),  0 0 20px rgba(88,166,255,0.45), 0 0 45px rgba(88,166,255,0.2); }
+  50%       { text-shadow: 0 0 4px rgba(88,166,255,0.35), 0 0 10px rgba(88,166,255,0.12), 0 0 18px rgba(88,166,255,0.04); }
+}
+
 /* ── Hero header ── */
 .hero {
   display: flex;
@@ -158,12 +168,14 @@ nav a.active { color: var(--accent); font-weight: 600; }
   color: var(--text);
   line-height: 1.1;
   margin-bottom: 0.3rem;
+  animation: tracker-title-glow 3s ease-in-out infinite;
 }
 
 .hero-sub {
   font-family: var(--fm);
   font-size: 1.2rem;
   color: var(--muted);
+  animation: tracker-sub-glow 3s ease-in-out infinite 0.4s;
 }
 
 .hero-right {
