@@ -509,7 +509,7 @@ function parseExternalIdCommits(jsonText) {
   if (!Array.isArray(arr)) return []; // handles 403/rate-limit error objects
 
   const KEEP = /passkey|fido2|webauthn|new (article|how-to)|add .*(how-to|guide)/i;
-  const SKIP = /typo|frontmatter|copy-edit|style|link fix|editorial/i;
+  const SKIP = /typo|frontmatter|copy-edit|style|link fix|editorial|merge pull request|pull request|pr review|review feedback|review checklist/i;
 
   const results = [];
   const seen    = new Set();
