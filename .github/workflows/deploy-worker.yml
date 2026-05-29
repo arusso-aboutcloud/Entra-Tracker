@@ -1,0 +1,36 @@
+# Deploy the Entra Tracker Cloudflare Worker on every push to main
+# that touches the api/ directory.
+#
+# REQUIRED REPO SECRETS (Settings > Secrets and variables > Actions):
+#   CLOUDFLARE_API_TOKEN   -- CF API token with Workers Scripts:Edit permission
+#   CLOUDFLARE_ACCOUNT_ID  -- Cloudflare account ID (from CF dashboard)
+#
+# Without both secrets this workflow will fail at the deploy step.
+
+name: Deploy Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: api

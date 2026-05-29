@@ -49,7 +49,7 @@ const EXTERNAL_ID_DOCS_URL = 'https://raw.githubusercontent.com/MicrosoftDocs/en
 const B2C_DOCS_URL = 'https://raw.githubusercontent.com/MicrosoftDocs/azure-docs/main/articles/active-directory-b2c/whats-new-docs.md';
 
 // External ID customer docs -- direct commit watch (catches how-tos before curated changelog)
-const COMMITS_API_URL = 'https://api.github.com/repos/MicrosoftDocs/entra-docs/commits?path=docs/external-id/customers&per_page=30';
+const COMMITS_API_URL = 'https://api.github.com/repos/MicrosoftDocs/entra-docs/commits?path=docs/external-id/customers&per_page=100';
 
 // ── EXTERNAL ID DETECTION ──────────────────────────────────────────────────
 const EXTERNAL_ID_SERVICE_CATEGORIES = [

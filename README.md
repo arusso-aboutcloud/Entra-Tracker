@@ -69,7 +69,12 @@ This repository is continuously scanned by [Trivy](https://trivy.dev/) on every 
 |---|---|---|
 | `ENTRA_CACHE` | KV Namespace | Single-key cache of parsed articles + metadata |
 
-**Cron Trigger:** Every 4 hours — scrapes all 5 sources in parallel and refreshes KV.
+**Cron Trigger:** Every 4 hours -- scrapes all 5 sources in parallel and refreshes KV.
+
+**CI Deploy:** `.github/workflows/deploy-worker.yml` runs `wrangler deploy` automatically
+on every push to `main` that touches `api/**`. Requires two repo secrets set in
+GitHub Settings > Secrets and variables > Actions:
+`CLOUDFLARE_API_TOKEN` (Workers Scripts:Edit permission) and `CLOUDFLARE_ACCOUNT_ID`.
 
 ### Pages
 
