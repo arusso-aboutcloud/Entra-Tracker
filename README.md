@@ -27,7 +27,7 @@
 
 ## What It Does
 
-A fully automated, €0/month change tracker that monitors four official Microsoft source repositories and RSS feeds for Entra ID updates — what's new, previews, retirements, and breaking changes. Every update is classified by type, service category, and impact, then served through a searchable, filterable web UI.
+A fully automated, €0/month change tracker that monitors five official Microsoft sources for Entra ID updates -- what's new, previews, retirements, and breaking changes. Every update is classified by type, service category, and impact, then served through a searchable, filterable web UI.
 
 ---
 
@@ -69,7 +69,7 @@ This repository is continuously scanned by [Trivy](https://trivy.dev/) on every 
 |---|---|---|
 | `ENTRA_CACHE` | KV Namespace | Single-key cache of parsed articles + metadata |
 
-**Cron Trigger:** Every 4 hours — scrapes all 4 sources in parallel and refreshes KV.
+**Cron Trigger:** Every 4 hours — scrapes all 5 sources in parallel and refreshes KV.
 
 ### Pages
 

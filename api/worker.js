@@ -630,11 +630,16 @@ async function buildTrackerData() {
     return 0;
   });
 
-  // Deduplicate by title prefix (strip subtype prefix for comparison)
+  // Deduplicate by title prefix (strip subtype prefix for comparison).
+  // external-id-commits items use a source-scoped key so a commits item
+  // is never collapsed into a same-titled changelog item from source 3.
+  // parseExternalIdCommits already de-dupes its own batch, so this only
+  // prevents cross-source loss of the passkey how-to entries.
   const deduped = [];
   const seen    = new Set();
   for (const item of allItems) {
-    const key = item.title.replace(/^\[[^\]]+\]\s+/,'').toLowerCase().slice(0,60);
+    const stripped = item.title.replace(/^\[[^\]]+\]\s+/,'').toLowerCase().slice(0,60);
+    const key = item.source === 'external-id-commits' ? `eic:${stripped}` : stripped;
     if (!seen.has(key)) { seen.add(key); deduped.push(item); }
   }
 
