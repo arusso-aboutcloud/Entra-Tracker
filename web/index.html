@@ -864,6 +864,55 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
 @media (max-width: 640px) {
   .profile-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Announced date (shown on cards without a deadline) */
+.cd-announced {
+  font-family: var(--fm);
+  font-size: 0.72rem;
+  color: var(--dim);
+  text-align: right;
+  line-height: 1.5;
+}
+
+/* On radar star button */
+.radar-btn {
+  background: none;
+  border: 1px solid var(--bdr-light);
+  color: var(--muted);
+  width: 26px; height: 26px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+}
+.radar-btn:hover { border-color: #e3b341; color: #e3b341; }
+.radar-btn.on    { border-color: #e3b341; color: #e3b341; background: rgba(227,179,65,.1); }
+
+/* On radar filter button */
+.fbtn.radar-filter-btn { color: #e3b341; border-color: rgba(227,179,65,.4); }
+.fbtn.radar-filter-btn.active { background: rgba(227,179,65,.15); border-color: #e3b341; color: #e3b341; font-weight: 700; }
+
+/* Sort select */
+.sort-sel {
+  font-family: var(--fm);
+  font-size: 0.85rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 24px;
+  border: 1px solid var(--bdr);
+  background: var(--surf);
+  color: var(--muted);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.sort-sel:hover, .sort-sel:focus { border-color: var(--accent); color: var(--text); }
 </style>
     <script defer src="https://analytics.aboutcloud.io/script.js" data-website-id="a58f5b6a-e25d-4dd8-a008-5e5001b3c97c"></script>
 </head>
@@ -1130,10 +1179,15 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
     <button class="fbtn ext-id-btn" data-f="external-id" id="btn-extid">🟣 External ID</button>
     <button class="fbtn" data-f="expired">Expired</button>
     <button class="fbtn" data-f="tenant" id="btn-tenant" style="display:none;color:var(--accent);border-color:rgba(88,166,255,.4)">🎯 My Tenant</button>
+    <button class="fbtn radar-filter-btn" data-f="radar" id="btn-radar">&#9733; On Radar</button>
     <label class="toggle-wrap">
       <input type="checkbox" id="hide-expired" checked>
       Hide expired
     </label>
+    <select id="sort-select" class="sort-sel" title="Sort order">
+      <option value="default">Sort: Default (urgency)</option>
+      <option value="announced">Sort: Newest announced</option>
+    </select>
     <div class="search-wrap">
       <input type="text" id="search" class="search-input" placeholder="Search changes..." autocomplete="off">
     </div>
@@ -1162,6 +1216,8 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
       <a href="https://learn.microsoft.com/en-us/entra/external-id/whats-new-docs" target="_blank">External ID Docs</a>
       ·
       <a href="https://learn.microsoft.com/en-us/azure/active-directory-b2c/whats-new-docs" target="_blank">B2C Docs</a>
+      ·
+      <a href="https://github.com/MicrosoftDocs/entra-docs/commits/main/docs/external-id/customers" target="_blank">External ID Commits</a>
     </div>
     <div class="footer-text">
       Built by <a href="https://blog.aboutcloud.io" target="_blank">AboutCloud.io</a>
@@ -1205,8 +1261,32 @@ const PROFILE_KEYWORDS = {
 
 const PROFILE_KEY = 'entra_tracker_profile_v1';
 
-let all=[], af='all', as_=null, sq='', hideExpired=true;
+let all=[], af='all', as_=null, sq='', hideExpired=true, sortMode='default';
 let profile = {};
+
+// ── ON RADAR (client-side localStorage watchlist) ─────────────────────────
+const RADAR_KEY = 'entratracker_radar';
+let radarIds = new Set();
+
+function loadRadar() {
+  try {
+    const saved = localStorage.getItem(RADAR_KEY);
+    radarIds = new Set(saved ? JSON.parse(saved) : []);
+  } catch(e) { radarIds = new Set(); }
+}
+
+function saveRadar() {
+  try { localStorage.setItem(RADAR_KEY, JSON.stringify([...radarIds])); } catch(e){}
+}
+
+function toggleRadar(id) {
+  if(radarIds.has(id)) radarIds.delete(id);
+  else radarIds.add(id);
+  saveRadar();
+  render(); // re-render to update star states and radar-only filter
+}
+
+window.toggleRadar = toggleRadar;
 
 // ── PROFILE FUNCTIONS ─────────────────────────────────────────────────────────
 
@@ -1316,26 +1396,40 @@ function catLabel(c){
 
 function impLabel(i){ return i[0].toUpperCase()+i.slice(1)+' impact'; }
 
+function fmtAnnounced(iso) {
+  try {
+    const d = new Date(iso + 'T00:00:00Z');
+    return d.toLocaleDateString('en-GB', { month:'short', year:'numeric', timeZone:'UTC' });
+  } catch(e) { return iso; }
+}
+
 function cdHTML(item){
-  if(!item.deadline) return '';
-  if(item.status==='expired'){
-    return `<div class="cd-num s-exp">EXPIRED</div><div class="cd-date">${item.deadline}</div>`;
+  if(item.deadline) {
+    if(item.status==='expired'){
+      return `<div class="cd-num s-exp">EXPIRED</div><div class="cd-date">${item.deadline}</div>`;
+    }
+    const d = item.daysRemaining;
+    const sc = item.status==='red'?'s-red':item.status==='yellow'?'s-yel':'s-grn';
+    return `<div class="cd-num ${sc}">${d}</div>
+            <div class="cd-lbl">day${d!==1?'s':''} left</div>
+            <div class="cd-date">${item.deadline}</div>`;
   }
-  const d = item.daysRemaining;
-  const sc = item.status==='red'?'s-red':item.status==='yellow'?'s-yel':'s-grn';
-  return `<div class="cd-num ${sc}">${d}</div>
-          <div class="cd-lbl">day${d!==1?'s':''} left</div>
-          <div class="cd-date">${item.deadline}</div>`;
+  if(item.announcedDate) {
+    return `<div class="cd-announced">Announced<br>${fmtAnnounced(item.announcedDate)}</div>`;
+  }
+  return '';
 }
 
 function entryHTML(item){
   const art      = findArt(item.title) || item.articleUrl;
-  const ms       = item.link ? `<a class="lnk" href="${esc(item.link)}" target="_blank" rel="noopener">MS Docs ↗</a>` : '';
-  const ar       = art       ? `<a class="lnk art" href="${esc(art)}" target="_blank">Read post ↗</a>` : '';
+  const ms       = item.link ? `<a class="lnk" href="${esc(item.link)}" target="_blank" rel="noopener">MS Docs &#8599;</a>` : '';
+  const ar       = art       ? `<a class="lnk art" href="${esc(art)}" target="_blank">Read post &#8599;</a>` : '';
   const sc       = item.status==='red'?'s-red':item.status==='yellow'?'s-yel':item.status==='green'?'s-grn':'s-exp';
   const affected = itemMatchesProfile(item);
-  const tenantBadge = affected ? `<span class="badge i-tenant">🎯 Affects your tenant</span>` : '';
-  const extIdBadge  = item.namespace === 'external-id' ? `<span class="badge i-external-id">🟣 External ID</span>` : '';
+  const tenantBadge = affected ? `<span class="badge i-tenant">&#127919; Affects your tenant</span>` : '';
+  const extIdBadge  = item.namespace === 'external-id' ? `<span class="badge i-external-id">&#x1F7E3; External ID</span>` : '';
+  const starred  = radarIds.has(item.id);
+  const radarBtn = `<button class="radar-btn${starred?' on':''}" onclick="toggleRadar('${item.id}')" title="${starred?'Remove from On Radar':'Add to On Radar'}" aria-label="${starred?'Remove from radar':'Add to radar'}">${starred?'&#9733;':'&#9734;'}</button>`;
 
   return `<div class="entry ${sc}">
     <div class="entry-strip"></div>
@@ -1348,6 +1442,7 @@ function entryHTML(item){
         ${extIdBadge}
         ${tenantBadge}
         ${ms}${ar}
+        ${radarBtn}
       </div>
     </div>
     <div class="entry-right">${cdHTML(item)}</div>
@@ -1360,12 +1455,23 @@ function getFiltered(){
     if(af === 'expired' && i.status !== 'expired') return false;
     if(af === 'tenant' && !itemMatchesProfile(i)) return false;
     if(af === 'external-id' && i.namespace !== 'external-id') return false;
-    if(af !== 'all' && af !== 'expired' && af !== 'tenant' && af !== 'external-id' && i.category !== af) return false;
+    if(af === 'radar' && !radarIds.has(i.id)) return false;
+    if(af !== 'all' && af !== 'expired' && af !== 'tenant' && af !== 'external-id' && af !== 'radar' && i.category !== af) return false;
     if(as_ && as_ !== 'tenant' && as_ !== 'external-id' && i.status !== as_) return false;
     if(sq && !i.title.toLowerCase().includes(sq) && !(i.description||'').toLowerCase().includes(sq)) return false;
     return true;
   });
-  if(as_ === 'green'){
+
+  if(sortMode === 'announced') {
+    items.sort((a, b) => {
+      const da = a.announcedDate || '';
+      const db = b.announcedDate || '';
+      if(da && db) return db.localeCompare(da);
+      if(da) return -1;
+      if(db) return 1;
+      return 0;
+    });
+  } else if(as_ === 'green'){
     const imp = {high:0,medium:1,low:2};
     items.sort((a,b)=>{
       const aD=!!a.deadline, bD=!!b.deadline;
@@ -1530,6 +1636,12 @@ document.getElementById('hide-expired').addEventListener('change', e => {
   render();
 });
 
+// Sort select
+document.getElementById('sort-select').addEventListener('change', e => {
+  sortMode = e.target.value;
+  render();
+});
+
 // Load data
 async function load(){
   try {
@@ -1544,6 +1656,7 @@ async function load(){
       hour:'2-digit', minute:'2-digit', timeZone:'UTC'
     }) + ' UTC';
 
+    loadRadar();
     loadProfile();
     updateStats(all);
     render();
