@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/arusso-aboutcloud/Entra-Tracker/actions/workflows/trivy-scan.yml"><img src="./trivy-badge.svg" alt="Trivy Security Scan" height="24"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/sources-4-blue" alt="4 data sources">
+  <img src="https://img.shields.io/badge/sources-5-blue" alt="5 data sources">
   <img src="https://img.shields.io/badge/update-every_4h-green" alt="Updated every 4 hours">
   <img src="https://img.shields.io/badge/cost-€0/month-brightgreen" alt="€0/month">
 </p>
@@ -27,7 +27,7 @@
 
 ## What It Does
 
-A fully automated, €0/month change tracker that monitors four official Microsoft source repositories and RSS feeds for Entra ID updates — what's new, previews, retirements, and breaking changes. Every update is classified by type, service category, and impact, then served through a searchable, filterable web UI.
+A fully automated, €0/month change tracker that monitors five official Microsoft sources for Entra ID updates -- what's new, previews, retirements, and breaking changes. Every update is classified by type, service category, and impact, then served through a searchable, filterable web UI.
 
 ---
 
@@ -69,7 +69,7 @@ This repository is continuously scanned by [Trivy](https://trivy.dev/) on every 
 |---|---|---|
 | `ENTRA_CACHE` | KV Namespace | Single-key cache of parsed articles + metadata |
 
-**Cron Trigger:** Every 4 hours — scrapes all 4 sources in parallel and refreshes KV.
+**Cron Trigger:** Every 4 hours — scrapes all 5 sources in parallel and refreshes KV.
 
 ### Pages
 
@@ -89,7 +89,16 @@ This repository is continuously scanned by [Trivy](https://trivy.dev/) on every 
 **Base URL:** `https://api.aboutcloud.io/entra-tracker`
 
 ### `GET /`
-Returns full article catalog with metadata. Supports search, filter by type/category, and date range.
+Returns full article catalog with metadata.
+
+**Query parameters:**
+
+| Parameter | Values | Description |
+|---|---|---|
+| `format` | `csv` | Return dataset as CSV instead of JSON. Reuses cached data — does not trigger a re-fetch. Columns: `title,category,impact,status,announcedDate,deadline,daysRemaining,namespace,link`. Response includes `Content-Disposition: attachment; filename="entra-tracker.csv"`. |
+| `refresh` | `1` | Bypass KV cache and force a fresh fetch from all sources. |
+
+**`announcedDate` field:** Each item now includes `announcedDate` (ISO `yyyy-mm-dd` or `null`). Populated from the `## Month YYYY` section header in whats-new.md / docs changelogs, the commit date in the commits source, or the RSS pubDate. This is the publication/announcement date only — it never becomes a deadline.
 
 ---
 
@@ -101,6 +110,7 @@ Returns full article catalog with metadata. Supports search, filter by type/cate
 | 2 | TechCommunity RSS | RSS | Entra blog announcements |
 | 3 | `entra-docs: external-id/whats-new-docs.md` | Markdown | External ID docs changelog |
 | 4 | `azure-docs: active-directory-b2c/whats-new-docs.md` | Markdown | B2C docs changelog |
+| 5 | `entra-docs: commits — external-id/customers` | GitHub Commits API | External ID customer how-tos (direct repo watch, pre-changelog) — catches passkey/FIDO2 guides before MS adds them to the curated index |
 
 ---
 
@@ -128,6 +138,9 @@ Tracked per item based on Microsoft's own categorization (Entra ID Protection, C
 - 📊 Stats bar — total items, breakdown by type
 - 🔗 Crosslinks to aboutcloud.io and entraerrors.aboutcloud.io
 - 🌙 Dark theme (Entra-inspired)
+- 📣 Announced date display — cards without a deadline show "Announced Mon YYYY" instead of an empty right panel
+- 🔃 Newest-announced sort — sort the entire feed by `announcedDate` descending to see what's freshest
+- ⭐ On Radar (client-side watchlist) — star any item to add it to your personal watchlist; persisted in `localStorage` under key `entratracker_radar`; filter to starred items with the "On Radar" toggle; cross-device sync is out of scope (see ROADMAP.md)
 
 ---
 
