@@ -868,10 +868,18 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
 /* Announced date (shown on cards without a deadline) */
 .cd-announced {
   font-family: var(--fm);
-  font-size: 0.72rem;
-  color: var(--dim);
+  font-size: 0.8rem;
+  color: var(--muted);
   text-align: right;
   line-height: 1.5;
+}
+.cd-announced::before {
+  content: 'ANNOUNCED';
+  display: block;
+  font-size: 0.6rem;
+  color: var(--dim);
+  letter-spacing: 0.07em;
+  margin-bottom: 0.2rem;
 }
 
 /* On radar star button */
@@ -1415,7 +1423,7 @@ function cdHTML(item){
             <div class="cd-date">${item.deadline}</div>`;
   }
   if(item.announcedDate) {
-    return `<div class="cd-announced">Announced<br>${fmtAnnounced(item.announcedDate)}</div>`;
+    return `<div class="cd-announced">${fmtAnnounced(item.announcedDate)}</div>`;
   }
   return '';
 }
