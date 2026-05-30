@@ -172,7 +172,14 @@ function classifyByKeyword(title, description) {
 }
 
 function makeId(title) {
-  return btoa(unescape(encodeURIComponent(title.slice(0, 40)))).replace(/[^a-zA-Z0-9]/g,'').slice(0,16);
+  // FNV-1a 32-bit over the full title -> stable, collision-resistant id.
+  const s = String(title || '');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return ('00000000' + h.toString(16)).slice(-8);
 }
 
 // ── CSV HELPER ──────────────────────────────────────────────────────────────

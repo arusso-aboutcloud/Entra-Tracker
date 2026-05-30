@@ -1274,9 +1274,18 @@ let profile = {};
 
 // ── ON RADAR (client-side localStorage watchlist) ─────────────────────────
 const RADAR_KEY = 'entratracker_radar';
+const RADAR_MIGRATION_KEY = 'entratracker_radar_idv2';
 let radarIds = new Set();
 
 function loadRadar() {
+  // ids changed in idv2 (FNV hash); clear stale radar once so old colliding
+  // ids don't resurface as phantom/empty state.
+  try {
+    if (localStorage.getItem(RADAR_MIGRATION_KEY) !== '1') {
+      localStorage.removeItem(RADAR_KEY);
+      localStorage.setItem(RADAR_MIGRATION_KEY, '1');
+    }
+  } catch(e) {}
   try {
     const saved = localStorage.getItem(RADAR_KEY);
     radarIds = new Set(saved ? JSON.parse(saved) : []);
@@ -1402,7 +1411,7 @@ function catLabel(c){
   return {retirement:'Retiring',breaking:'Breaking',preview:'Preview',new_feature:'New'}[c]||c;
 }
 
-function impLabel(i){ return i[0].toUpperCase()+i.slice(1)+' impact'; }
+function impLabel(i){ if(!i) return 'Unknown impact'; return i[0].toUpperCase()+i.slice(1)+' impact'; }
 
 function fmtAnnounced(iso) {
   try {
@@ -1429,7 +1438,7 @@ function cdHTML(item){
 }
 
 function entryHTML(item){
-  const art      = findArt(item.title) || item.articleUrl;
+  const art      = (item.title ? findArt(item.title) : null) || item.articleUrl;
   const ms       = item.link ? `<a class="lnk" href="${esc(item.link)}" target="_blank" rel="noopener">MS Docs &#8599;</a>` : '';
   const ar       = art       ? `<a class="lnk art" href="${esc(art)}" target="_blank">Read post &#8599;</a>` : '';
   const sc       = item.status==='red'?'s-red':item.status==='yellow'?'s-yel':item.status==='green'?'s-grn':'s-exp';
