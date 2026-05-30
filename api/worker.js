@@ -126,6 +126,18 @@ function pubDateToISO(pubDate) {
   } catch (e) { return null; }
 }
 
+// Integer whole-day count from today (UTC midnight) to a deadline (UTC
+// midnight), so the number is stable all day regardless of viewer timezone.
+// Negative = past. Both operands floored to UTC date, so use round (no
+// fractional remainder).
+function daysUntilUTC(deadline) {
+  if (!deadline) return null;
+  const now = new Date();
+  const nowUTC  = Date.UTC(now.getUTCFullYear(),  now.getUTCMonth(),  now.getUTCDate());
+  const deadUTC = Date.UTC(deadline.getUTCFullYear(), deadline.getUTCMonth(), deadline.getUTCDate());
+  return Math.round((deadUTC - nowUTC) / 86400000);
+}
+
 function extractDeadline(text) {
   const lower = text.toLowerCase();
 
@@ -146,7 +158,7 @@ function extractDeadline(text) {
 
 function deriveStatus(deadline) {
   if (!deadline) return 'green';
-  const days = Math.ceil((deadline - new Date()) / 86400000);
+  const days = daysUntilUTC(deadline);
   if (days <= 0)   return 'expired';
   if (days <= 90)  return 'red';
   if (days <= 180) return 'yellow';
@@ -276,7 +288,7 @@ function parseWhatsNewMarkdown(markdown) {
 
       const status  = deriveStatus(deadline);
       const impact  = deriveImpact(category, contentText);
-      const days    = deadline ? Math.ceil((deadline - new Date()) / 86400000) : null;
+      const days    = daysUntilUTC(deadline);
 
       results.push({
         id:            makeId(title),
@@ -337,7 +349,7 @@ function parseDocsChangelog(markdown, sourceLabel, namespace, subtype) {
 
     const status = deriveStatus(deadline);
     const impact = deriveImpact(category, fullText);
-    const days   = deadline ? Math.ceil((deadline - new Date()) / 86400000) : null;
+    const days   = daysUntilUTC(deadline);
 
     results.push({
       id:            makeId(`${subtype}:${title}`),
@@ -403,7 +415,7 @@ function parseFSLogixDocs(html) {
     const deadline  = extractDeadline(text);
     const category  = /action required|breaking|will fail|must|before.*update/i.test(text) ? 'breaking' : 'preview';
     const status    = deriveStatus(deadline);
-    const days      = deadline ? Math.ceil((deadline - new Date()) / 86400000) : null;
+    const days      = daysUntilUTC(deadline);
 
     results.push({
       id:            makeId(title),
@@ -480,7 +492,7 @@ function transformRSSItems(raw) {
     const deadline = extractDeadline(text);
     const status   = deriveStatus(deadline);
     const impact   = deriveImpact(category, text);
-    const days     = deadline ? Math.ceil((deadline - new Date()) / 86400000) : null;
+    const days     = daysUntilUTC(deadline);
     const namespace = isExternalId(item.title, '') ? 'external-id' : 'entra-id';
 
     // Tech Community Entra blog is editorially curated -- include all posts.
