@@ -844,6 +844,13 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
   border-color: rgba(88,166,255,.3);
 }
 
+/* New-this-week badge on cards */
+.badge.i-new-recent {
+  color: var(--grn);
+  background: var(--grn-bg);
+  border-color: var(--grn-bdr);
+}
+
 /* External ID badge on cards */
 .badge.i-external-id {
   color: #c084fc;
@@ -1269,7 +1276,7 @@ const PROFILE_KEYWORDS = {
 
 const PROFILE_KEY = 'entra_tracker_profile_v1';
 
-let all=[], af='all', as_=null, sq='', hideExpired=true, sortMode='default';
+let all=[], af='all', as_=null, sq='', hideExpired=true, sortMode='default', coldStart=false;
 let profile = {};
 
 // ── ON RADAR (client-side localStorage watchlist) ─────────────────────────
@@ -1413,6 +1420,13 @@ function catLabel(c){
 
 function impLabel(i){ if(!i) return 'Unknown impact'; return i[0].toUpperCase()+i.slice(1)+' impact'; }
 
+function isRecentlyNew(item, cs) {
+  if (cs || !item.firstSeen) return false;
+  const seen = new Date(item.firstSeen + 'T00:00:00Z').getTime();
+  const cutoff = Date.now() - 7 * 86400000;
+  return seen >= cutoff;
+}
+
 function fmtAnnounced(iso) {
   try {
     const d = new Date(iso + 'T00:00:00Z');
@@ -1445,6 +1459,7 @@ function entryHTML(item){
   const affected = itemMatchesProfile(item);
   const tenantBadge = affected ? `<span class="badge i-tenant">&#127919; Affects your tenant</span>` : '';
   const extIdBadge  = item.namespace === 'external-id' ? `<span class="badge i-external-id">&#x1F7E3; External ID</span>` : '';
+  const newBadge    = isRecentlyNew(item, coldStart) ? `<span class="badge i-new-recent">&#10024; New</span>` : '';
   const starred  = radarIds.has(item.id);
   const radarBtn = `<button class="radar-btn${starred?' on':''}" onclick="toggleRadar('${item.id}')" title="${starred?'Remove from On Radar':'Add to On Radar'}" aria-label="${starred?'Remove from radar':'Add to radar'}">${starred?'&#9733;':'&#9734;'}</button>`;
 
@@ -1454,6 +1469,7 @@ function entryHTML(item){
       <div class="entry-title">${esc(item.title)}</div>
       <div class="entry-desc">${esc(item.description||'')}</div>
       <div class="entry-meta">
+        ${newBadge}
         <span class="badge c-${item.category}">${catLabel(item.category)}</span>
         <span class="badge i-${item.impact}">${impLabel(item.impact)}</span>
         ${extIdBadge}
@@ -1666,6 +1682,7 @@ async function load(){
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     all = data.items || [];
+    coldStart = !!data.coldStart;
 
     const d = new Date(data.lastUpdated);
     document.getElementById('upd').textContent = 'Updated ' + d.toLocaleString('en-GB', {

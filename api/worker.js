@@ -126,6 +126,19 @@ function pubDateToISO(pubDate) {
   } catch (e) { return null; }
 }
 
+// Diff current items against the previous snapshot's ids. Tags isNew, and
+// carries firstSeen forward so an item's first-seen date is stable across runs.
+function applyDiff(currentItems, prevItems) {
+  const prevById = new Map((prevItems || []).map(i => [i.id, i]));
+  const nowISO = new Date().toISOString().split('T')[0];
+  for (const item of currentItems) {
+    const prev = prevById.get(item.id);
+    item.isNew     = !prev;
+    item.firstSeen = (prev && prev.firstSeen) ? prev.firstSeen : nowISO;
+  }
+  return currentItems;
+}
+
 // Integer whole-day count from today (UTC midnight) to a deadline (UTC
 // midnight), so the number is stable all day regardless of viewer timezone.
 // Negative = past. Both operands floored to UTC date, so use round (no
@@ -196,7 +209,7 @@ function makeId(title) {
 
 // ── CSV HELPER ──────────────────────────────────────────────────────────────
 function toCSV(items) {
-  const COLS = ['title','category','impact','status','announcedDate','deadline','daysRemaining','namespace','link'];
+  const COLS = ['title','category','impact','status','announcedDate','firstSeen','deadline','daysRemaining','namespace','link'];
   function field(v) {
     const s = v == null ? '' : String(v);
     return /[,"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -567,7 +580,7 @@ function parseExternalIdCommits(jsonText) {
 }
 
 // ── BUILD FULL DATASET ─────────────────────────────────────────────────────
-async function buildTrackerData() {
+async function buildTrackerData(prevItems) {
   const allItems = [];
   const errors   = [];
 
@@ -662,12 +675,20 @@ async function buildTrackerData() {
     if (!seen.has(key)) { seen.add(key); deduped.push(item); }
   }
 
-  const externalIdCount = deduped.filter(i => i.namespace === 'external-id').length;
+  const diffed = applyDiff(deduped, prevItems);
+  // cold start: no prior snapshot, or prior snapshot predates firstSeen field
+  const coldStart = !prevItems || prevItems.length === 0
+                    || !prevItems.some(i => i.firstSeen);
+  const newCount = coldStart ? 0 : diffed.filter(i => i.isNew).length;
+
+  const externalIdCount = diffed.filter(i => i.namespace === 'external-id').length;
 
   return {
     lastUpdated:    new Date().toISOString(),
-    count:          deduped.length,
+    count:          diffed.length,
     externalIdCount,
+    newCount,
+    coldStart,
     sources: {
       'whats-new-md':        countWN,
       'fslogix-docs':        countFS,
@@ -676,7 +697,7 @@ async function buildTrackerData() {
       'external-id-commits': countEIC,
     },
     errors:         errors.length ? errors : undefined,
-    items:          deduped,
+    items:          diffed,
   };
 }
 
@@ -737,8 +758,18 @@ export default {
       } catch (e) { console.error('KV read:', e.message); }
     }
 
+    // Read current snapshot BEFORE overwriting -- this is the prev for diffing.
+    // Only reached on MISS (the HIT branch returns early above).
+    let prevItems = [];
+    if (env.ENTRA_CACHE) {
+      try {
+        const old = await env.ENTRA_CACHE.get(CACHE_KEY, 'text');
+        if (old) prevItems = (JSON.parse(old).items) || [];
+      } catch (e) { console.error('prev read:', e.message); }
+    }
+
     try {
-      const data = await buildTrackerData();
+      const data = await buildTrackerData(prevItems);
       const json = JSON.stringify(data, null, 2);
 
       if (env.ENTRA_CACHE) {
@@ -778,11 +809,18 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
       try {
-        const data = await buildTrackerData();
+        let prevItems = [];
+        if (env.ENTRA_CACHE) {
+          try {
+            const old = await env.ENTRA_CACHE.get(CACHE_KEY, 'text');
+            if (old) prevItems = (JSON.parse(old).items) || [];
+          } catch (e) { console.error('prev read:', e.message); }
+        }
+        const data = await buildTrackerData(prevItems);
         const json = JSON.stringify(data, null, 2);
         if (env.ENTRA_CACHE) {
           await env.ENTRA_CACHE.put(CACHE_KEY, json, { expirationTtl: CACHE_TTL_SECONDS });
-          console.log(`Cron OK -- ${data.count} items (${data.externalIdCount} External ID)`);
+          console.log(`Cron OK -- ${data.count} items (${data.externalIdCount} External ID, ${data.newCount} new)`);
         }
       } catch (err) { console.error('Cron:', err.message); }
     })());
