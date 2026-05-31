@@ -1790,21 +1790,16 @@ document.getElementById('sort-select').addEventListener('change', e => {
   render();
 });
 
-// Subscribe / Export popover
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initSubscribe);
-} else {
-  initSubscribe();
-}
-
+// Subscribe / Export popover — attach listeners
 function initSubscribe() {
   const subBtn = document.getElementById('subBtn');
   const subPop = document.getElementById('subPop');
 
   if (!subBtn || !subPop) {
-    console.warn('Subscribe button or popover not found');
+    console.error('Subscribe elements not found: subBtn=' + !!subBtn + ', subPop=' + !!subPop);
     return;
   }
+  console.log('Subscribe button initialized');
 
   function syncSubscribePrimary() {
     const rssFullRow = document.querySelector('[data-row="rss-full"]');
@@ -1908,6 +1903,7 @@ async function load(){
 }
 
 load();
+initSubscribe();
 })();
 </script>
 
