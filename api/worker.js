@@ -63,6 +63,19 @@ const COMMITS_API_URL = 'https://api.github.com/repos/MicrosoftDocs/entra-docs/c
 // API edits, so it is filtered HARD downstream (see parseGraphChangelog).
 const GRAPH_CHANGELOG_URL = 'https://developer.microsoft.com/en-us/graph/changelog/rss/';
 
+// Candidate official feeds that are NOT currently ingestable -- e.g. the Microsoft
+// Entra blog RSS broke during the TechCommunity platform migration (all known URLs
+// 404 or return an empty channel). Probed on each build (see probeCandidateFeeds):
+// if Microsoft restores one, it surfaces a warnings[] entry telling the maintainer
+// to wire it in. This is a health probe, not a source -- nothing is ingested here.
+const CANDIDATE_FEEDS = [
+  { name: 'entra-blog', urls: [
+    'https://techcommunity.microsoft.com/t5/s/gxcuf89792/rss/board?board.id=Identity',
+    'https://techcommunity.microsoft.com/category/microsoft-entra/bd-p/Identity/rss',
+    'https://techcommunity.microsoft.com/rss/board?board.id=Identity',
+  ]},
+];
+
 // ── EXTERNAL ID DETECTION ──────────────────────────────────────────────────
 const EXTERNAL_ID_SERVICE_CATEGORIES = [
   'b2c', 'external id', 'external-id', 'ciam', 'consumer identity',
@@ -798,6 +811,26 @@ function parseGraphChangelog(xml) {
   return results;
 }
 
+// ── CANDIDATE FEED HEALTH PROBE ─────────────────────────────────────────────
+// Tries each candidate feed's known/plausible URLs. If one returns parseable RSS
+// with a real item count (>=3, to reject empty-channel shells), push a warning so
+// the maintainer knows the feed is back and can wire it in with proper filtering.
+// All failures are swallowed -- these URLs are EXPECTED to fail until Microsoft
+// restores them. Reuses parseRSS(). Adds a few cached fetches per build (cheap).
+async function probeCandidateFeeds(warnings) {
+  for (const cand of CANDIDATE_FEEDS) {
+    for (const url of cand.urls) {
+      try {
+        const items = parseRSS(await fetchText(url));
+        if (items.length >= 3) {
+          warnings.push(`candidate source '${cand.name}' appears LIVE at ${url} (${items.length} items) - ask to wire it in`);
+          break; // one working URL is enough for this candidate
+        }
+      } catch (e) { /* expected while the feed is unavailable -- swallow */ }
+    }
+  }
+}
+
 // ── BUILD FULL DATASET ─────────────────────────────────────────────────────
 async function buildTrackerData(prevItems) {
   const allItems = [];
@@ -878,6 +911,10 @@ async function buildTrackerData(prevItems) {
     if (rawItems === 0) warnings.push('graph-changelog: no <item> entries found - feed format may have changed');
     console.log(`graph-changelog: ${items.length} items (${rawItems} raw feed items)`);
   } catch (err) { errors.push(`graph-changelog: ${err.message}`); console.error(err.message); }
+
+  // Health probe: detect if a currently-unavailable official feed (Entra blog) has
+  // been restored, so it can be promoted to a real source. Surfaces via warnings[].
+  await probeCandidateFeeds(warnings);
 
   // Sort: expired_recent (still actionable) -> expired -> red -> yellow ->
   // green, then days asc, then announcedDate desc (newest first) as tiebreak
