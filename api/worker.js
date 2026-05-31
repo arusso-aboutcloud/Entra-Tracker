@@ -230,7 +230,9 @@ function extractDeadline(text, category) {
 function deriveStatus(deadline) {
   if (!deadline) return 'green';
   const days = daysUntilUTC(deadline);
-  if (days <= 0)   return 'expired';
+  if (days < -365) return 'expired';        // capped out of items[] later; status set defensively
+  if (days <= -90) return 'expired';         // passed 91-365 days ago
+  if (days <= 0)   return 'expired_recent';  // passed within last 90 days
   if (days <= 90)  return 'red';
   if (days <= 180) return 'yellow';
   return 'green';
@@ -789,7 +791,16 @@ async function buildTrackerData(prevItems) {
     if (!seen.has(key)) { seen.add(key); deduped.push(item); }
   }
 
-  const diffed = applyDiff(deduped, prevItems);
+  // 1-year retention cap: drop items whose deadline passed more than 365 days
+  // ago. Items with no deadline, or future/recent deadlines, are always kept.
+  // Keying on daysUntilUTC keeps this consistent with deriveStatus.
+  const capped = deduped.filter(it => {
+    if (!it.deadline) return true;
+    const d = daysUntilUTC(new Date(it.deadline + 'T00:00:00Z'));
+    return d >= -365;
+  });
+
+  const diffed = applyDiff(capped, prevItems);
   // cold start: no prior snapshot, or prior snapshot predates firstSeen field
   const coldStart = !prevItems || prevItems.length === 0
                     || !prevItems.some(i => i.firstSeen);
