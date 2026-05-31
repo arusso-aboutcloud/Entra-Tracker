@@ -219,31 +219,29 @@ nav a.active { color: var(--accent); font-weight: 600; }
 .subscribe-wrap { position: relative; }
 
 .subscribe-btn {
-  font-family: var(--fm);
-  font-size: 0.76rem; font-weight: 600;
-  letter-spacing: 0.07em; text-transform: uppercase;
-  padding: 0.5rem 1.05rem;
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  background: linear-gradient(135deg, rgba(88,166,255,.18), rgba(88,166,255,.05));
+  font-family: 'Chakra Petch', var(--fm);
+  font-size: 0.82rem; font-weight: 600;
+  letter-spacing: 0.09em; text-transform: uppercase;
+  padding: 0.55rem 1.4rem;
+  border: 1.5px solid var(--accent);
+  border-radius: 999px;               /* round pill */
+  color: #d6ebff;
+  background: linear-gradient(135deg, rgba(88,166,255,.22), rgba(88,166,255,.06));
   cursor: pointer; white-space: nowrap;
-  /* geometric notched top-right + bottom-left corners */
-  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 9px 100%, 0 calc(100% - 9px));
-  /* glow follows the clipped shape (box-shadow would stay rectangular) */
-  filter: drop-shadow(0 0 5px rgba(88,166,255,.35));
-  transition: filter .25s ease, background .25s ease, transform .15s ease, color .25s ease;
-  animation: sub-glow 3.2s ease-in-out infinite;
+  box-shadow: 0 0 8px rgba(88,166,255,.45), 0 0 18px rgba(88,166,255,.25), inset 0 0 10px rgba(88,166,255,.15);
+  transition: box-shadow .25s ease, background .25s ease, transform .15s ease, color .25s ease;
+  animation: sub-glow 2.8s ease-in-out infinite;
 }
 
 @keyframes sub-glow {
-  0%, 100% { filter: drop-shadow(0 0 4px rgba(88,166,255,.28)); }
-  50%      { filter: drop-shadow(0 0 9px rgba(88,166,255,.55)); }
+  0%, 100% { box-shadow: 0 0 6px rgba(88,166,255,.35), 0 0 14px rgba(88,166,255,.2),  inset 0 0 8px rgba(88,166,255,.12); }
+  50%      { box-shadow: 0 0 14px rgba(88,166,255,.7), 0 0 30px rgba(88,166,255,.4), inset 0 0 14px rgba(88,166,255,.25); }
 }
 
 .subscribe-btn:hover {
-  background: linear-gradient(135deg, rgba(88,166,255,.3), rgba(88,166,255,.12));
-  color: #cfe5ff;
-  filter: drop-shadow(0 0 13px rgba(88,166,255,.75));
+  background: linear-gradient(135deg, rgba(88,166,255,.35), rgba(88,166,255,.14));
+  color: #fff;
+  box-shadow: 0 0 18px rgba(88,166,255,.85), 0 0 40px rgba(88,166,255,.5), inset 0 0 16px rgba(88,166,255,.3);
   transform: translateY(-1px);
   animation: none;
 }
@@ -251,8 +249,8 @@ nav a.active { color: var(--accent); font-weight: 600; }
 .subscribe-btn:active { transform: translateY(0); }
 
 .subscribe-btn[aria-expanded="true"] {
-  background: linear-gradient(135deg, rgba(88,166,255,.34), rgba(88,166,255,.14));
-  filter: drop-shadow(0 0 12px rgba(88,166,255,.7));
+  background: linear-gradient(135deg, rgba(88,166,255,.4), rgba(88,166,255,.16));
+  box-shadow: 0 0 16px rgba(88,166,255,.8), 0 0 36px rgba(88,166,255,.45), inset 0 0 16px rgba(88,166,255,.3);
   animation: none;
 }
 
