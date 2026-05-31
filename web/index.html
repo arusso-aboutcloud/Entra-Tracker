@@ -215,6 +215,69 @@ nav a.active { color: var(--accent); font-weight: 600; }
 
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
 
+/* ── Subscribe / Export popover ── */
+.subscribe-wrap { position: relative; }
+
+.subscribe-btn {
+  font-family: var(--fm); font-size: 0.8rem;
+  padding: 0.45rem 0.9rem; border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: rgba(88,166,255,.1); color: var(--accent);
+  cursor: pointer; transition: background 0.15s; white-space: nowrap;
+}
+
+.subscribe-btn:hover { background: rgba(88,166,255,.2); }
+
+.subscribe-pop {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 50;
+  width: 340px; max-width: 86vw;
+  background: var(--surf); border: 1px solid var(--bdr);
+  border-radius: var(--r); padding: 0.5rem;
+  box-shadow: 0 10px 30px rgba(0,0,0,.4);
+}
+
+.subscribe-pop[hidden] { display: none; }
+
+.sub-pop-title {
+  font-family: var(--fm); font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted);
+  padding: 0.35rem 0.5rem 0.5rem;
+}
+
+.sub-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.75rem; padding: 0.6rem 0.5rem;
+  border-top: 1px solid var(--bdr);
+}
+
+.sub-row-label { font-family: var(--fd); font-size: 0.9rem; color: var(--text); }
+
+.sub-row-desc  { font-family: var(--fm); font-size: 0.7rem; color: var(--muted); line-height: 1.4; margin-top: 0.15rem; }
+
+.sub-row-actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
+
+.sub-copy, .sub-open {
+  font-family: var(--fm); font-size: 0.7rem;
+  padding: 0.3rem 0.6rem; border-radius: 6px;
+  border: 1px solid var(--bdr); background: var(--surf);
+  color: var(--accent); cursor: pointer; text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+  display: inline-block;
+}
+
+.sub-copy:hover, .sub-open:hover { border-color: var(--accent); }
+
+.sub-copy.copied { color: var(--grn); border-color: var(--grn-bdr); }
+
+.sub-row.primary { background: rgba(88,166,255,.06); border-radius: 6px; }
+
+.sub-row .sub-hint {
+  font-family: var(--fm); font-size: 0.62rem; color: var(--grn);
+  margin-top: 0.2rem; display: none;
+}
+
+.sub-row.primary .sub-hint { display: block; }
+
 /* ── Stats grid ── */
 .stats {
   display: grid;
@@ -971,6 +1034,56 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
     <div class="hero-right">
       <div id="upd" class="hero-updated">Loading...</div>
       <div class="hero-live">Auto-refreshes every 4 hours</div>
+      <div class="subscribe-wrap">
+        <button class="subscribe-btn" id="subBtn" aria-haspopup="true" aria-expanded="false">
+          &#128229; Subscribe / Export
+        </button>
+        <div class="subscribe-pop" id="subPop" role="menu" hidden>
+          <div class="sub-pop-title">Subscribe &amp; export</div>
+          <div class="sub-row" data-row="rss-full">
+            <div class="sub-row-main">
+              <div class="sub-row-label">&#128240; RSS feed</div>
+              <div class="sub-row-desc">All Entra changes, newest first. Add to Teams, Outlook, Feedly.</div>
+              <span class="sub-hint">matches current view</span>
+            </div>
+            <div class="sub-row-actions">
+              <button class="sub-copy" data-url="https://api.aboutcloud.io/entra-tracker?format=rss">Copy</button>
+              <a class="sub-open" href="https://api.aboutcloud.io/entra-tracker?format=rss" target="_blank" rel="noopener">Open</a>
+            </div>
+          </div>
+          <div class="sub-row" data-row="rss-extid">
+            <div class="sub-row-main">
+              <div class="sub-row-label">&#x1F7E3; RSS feed (External ID)</div>
+              <div class="sub-row-desc">External ID / B2B / B2C changes only.</div>
+              <span class="sub-hint">matches current view</span>
+            </div>
+            <div class="sub-row-actions">
+              <button class="sub-copy" data-url="https://api.aboutcloud.io/entra-tracker?format=rss&amp;namespace=external-id">Copy</button>
+              <a class="sub-open" href="https://api.aboutcloud.io/entra-tracker?format=rss&amp;namespace=external-id" target="_blank" rel="noopener">Open</a>
+            </div>
+          </div>
+          <div class="sub-row" data-row="csv">
+            <div class="sub-row-main">
+              <div class="sub-row-label">&#128202; CSV export</div>
+              <div class="sub-row-desc">Spreadsheet / KQL-ready. Downloads instantly.</div>
+            </div>
+            <div class="sub-row-actions">
+              <button class="sub-copy" data-url="https://api.aboutcloud.io/entra-tracker?format=csv">Copy</button>
+              <a class="sub-open" href="https://api.aboutcloud.io/entra-tracker?format=csv" target="_blank" rel="noopener">Open</a>
+            </div>
+          </div>
+          <div class="sub-row" data-row="json">
+            <div class="sub-row-main">
+              <div class="sub-row-label">&#128279; JSON API</div>
+              <div class="sub-row-desc">Raw data for developers and automation.</div>
+            </div>
+            <div class="sub-row-actions">
+              <button class="sub-copy" data-url="https://api.aboutcloud.io/entra-tracker">Copy</button>
+              <a class="sub-open" href="https://api.aboutcloud.io/entra-tracker" target="_blank" rel="noopener">Open</a>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1675,6 +1788,65 @@ document.getElementById('hide-expired').addEventListener('change', e => {
 document.getElementById('sort-select').addEventListener('change', e => {
   sortMode = e.target.value;
   render();
+});
+
+// Subscribe / Export popover
+const subBtn = document.getElementById('subBtn');
+const subPop = document.getElementById('subPop');
+
+function syncSubscribePrimary() {
+  const rssFullRow = document.querySelector('[data-row="rss-full"]');
+  const rssExtIdRow = document.querySelector('[data-row="rss-extid"]');
+  if (af === 'external-id') {
+    rssExtIdRow.classList.add('primary');
+    rssFullRow.classList.remove('primary');
+  } else {
+    rssFullRow.classList.add('primary');
+    rssExtIdRow.classList.remove('primary');
+  }
+}
+
+subBtn.addEventListener('click', () => {
+  const isOpen = !subPop.hidden;
+  subPop.hidden = !isOpen;
+  subBtn.setAttribute('aria-expanded', !isOpen);
+  if (!isOpen) {
+    syncSubscribePrimary();
+    if (typeof umami !== 'undefined') umami.track('subscribe-open');
+  }
+});
+
+document.addEventListener('click', e => {
+  if (!document.querySelector('.subscribe-wrap').contains(e.target) && !subPop.hidden) {
+    subPop.hidden = true;
+    subBtn.setAttribute('aria-expanded', 'false');
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !subPop.hidden) {
+    subPop.hidden = true;
+    subBtn.setAttribute('aria-expanded', 'false');
+  }
+});
+
+document.querySelectorAll('.sub-copy').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const url = btn.dataset.url;
+    const row = btn.closest('[data-row]').dataset.row;
+    try {
+      await navigator.clipboard.writeText(url);
+      btn.classList.add('copied');
+      btn.textContent = 'Copied';
+      if (typeof umami !== 'undefined') umami.track('subscribe-copy', { format: row });
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.textContent = 'Copy';
+      }, 1200);
+    } catch (err) {
+      console.error('copy:', err.message);
+    }
+  });
 });
 
 // Load data

@@ -148,6 +148,7 @@ Tracked per item based on Microsoft's own categorization (Entra ID Protection, C
 - 📣 Announced date display — cards without a deadline show "Announced Mon YYYY" instead of an empty right panel
 - 🔃 Newest-announced sort — sort the entire feed by `announcedDate` descending to see what's freshest
 - ⭐ On Radar (client-side watchlist) — star any item to add it to your personal watchlist; persisted in `localStorage` under key `entratracker_radar`; filter to starred items with the "On Radar" toggle; cross-device sync is out of scope (see ROADMAP.md)
+- 📡 Subscribe / Export — popover button surfacing RSS feeds (full and External ID), CSV export, and JSON API with one-click copy-to-clipboard for pasting into RSS readers, Teams, Power Automate, and spreadsheets
 
 ---
 
