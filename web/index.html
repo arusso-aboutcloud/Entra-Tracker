@@ -219,14 +219,44 @@ nav a.active { color: var(--accent); font-weight: 600; }
 .subscribe-wrap { position: relative; }
 
 .subscribe-btn {
-  font-family: var(--fm); font-size: 0.8rem;
-  padding: 0.45rem 0.9rem; border-radius: 8px;
+  font-family: var(--fm);
+  font-size: 0.76rem; font-weight: 600;
+  letter-spacing: 0.07em; text-transform: uppercase;
+  padding: 0.5rem 1.05rem;
   border: 1px solid var(--accent);
-  background: rgba(88,166,255,.1); color: var(--accent);
-  cursor: pointer; transition: background 0.15s; white-space: nowrap;
+  color: var(--accent);
+  background: linear-gradient(135deg, rgba(88,166,255,.18), rgba(88,166,255,.05));
+  cursor: pointer; white-space: nowrap;
+  /* geometric notched top-right + bottom-left corners */
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 9px 100%, 0 calc(100% - 9px));
+  /* glow follows the clipped shape (box-shadow would stay rectangular) */
+  filter: drop-shadow(0 0 5px rgba(88,166,255,.35));
+  transition: filter .25s ease, background .25s ease, transform .15s ease, color .25s ease;
+  animation: sub-glow 3.2s ease-in-out infinite;
 }
 
-.subscribe-btn:hover { background: rgba(88,166,255,.2); }
+@keyframes sub-glow {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(88,166,255,.28)); }
+  50%      { filter: drop-shadow(0 0 9px rgba(88,166,255,.55)); }
+}
+
+.subscribe-btn:hover {
+  background: linear-gradient(135deg, rgba(88,166,255,.3), rgba(88,166,255,.12));
+  color: #cfe5ff;
+  filter: drop-shadow(0 0 13px rgba(88,166,255,.75));
+  transform: translateY(-1px);
+  animation: none;
+}
+
+.subscribe-btn:active { transform: translateY(0); }
+
+.subscribe-btn[aria-expanded="true"] {
+  background: linear-gradient(135deg, rgba(88,166,255,.34), rgba(88,166,255,.14));
+  filter: drop-shadow(0 0 12px rgba(88,166,255,.7));
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) { .subscribe-btn { animation: none; } }
 
 .subscribe-pop {
   position: absolute; right: 0; top: calc(100% + 8px); z-index: 50;
@@ -1606,9 +1636,9 @@ function entryHTML(item){
 
 function getFiltered(){
   const items = all.filter(i => {
-    // "Hide expired" only suppresses OLD expired (91-365d). Recently-expired
-    // (<=90d) stays visible by default - it may mean you're already affected.
-    if(hideExpired && i.status === 'expired' && af !== 'expired' && as_ !== 'expired') return false;
+    // "Hide expired" suppresses BOTH expired tiers (recent <=90d and old 91-365d)
+    // unless the user is explicitly on the Expired tab/filter.
+    if(hideExpired && (i.status === 'expired' || i.status === 'expired_recent') && af !== 'expired' && as_ !== 'expired') return false;
     // Expired tab shows BOTH tiers (recent + old).
     if(af === 'expired' && i.status !== 'expired' && i.status !== 'expired_recent') return false;
     if(af === 'tenant' && !itemMatchesProfile(i)) return false;
