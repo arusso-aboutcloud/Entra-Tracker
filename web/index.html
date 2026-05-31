@@ -1567,9 +1567,18 @@ function impLabel(i){ if(!i) return 'Unknown impact'; return i[0].toUpperCase()+
 
 function isRecentlyNew(item, cs) {
   if (cs || !item.firstSeen) return false;
+  // Primary signal: the tracker first saw this item within the last 7 days.
   const seen = new Date(item.firstSeen + 'T00:00:00Z').getTime();
-  const cutoff = Date.now() - 7 * 86400000;
-  return seen >= cutoff;
+  if (seen < Date.now() - 7 * 86400000) return false;
+  // Sanity guard: if Microsoft announced it long ago (>60 days), it was newly
+  // INGESTED (e.g. a repaired scraper or a freshly-wired source), not actually
+  // fresh -- so don't badge it "Just added". announcedDate is the 1st-of-month
+  // stamp, so 60 days covers "this month or last month". Unknown date -> trust firstSeen.
+  if (item.announcedDate) {
+    const ann = new Date(item.announcedDate + 'T00:00:00Z').getTime();
+    if (ann < Date.now() - 60 * 86400000) return false;
+  }
+  return true;
 }
 
 function fmtAnnounced(iso) {
