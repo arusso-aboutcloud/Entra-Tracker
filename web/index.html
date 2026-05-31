@@ -1816,14 +1816,11 @@ function initSubscribe() {
   }
 
   subBtn.addEventListener('click', e => {
-    console.log('Button clicked', { isCurrentlyHidden: subPop.hidden, e });
     e.stopPropagation();
-    const isOpen = !subPop.hidden;
-    console.log('Toggling popover:', { wasOpen: isOpen, nowOpen: !isOpen });
-    subPop.hidden = !isOpen;
-    subBtn.setAttribute('aria-expanded', !isOpen);
-    console.log('Popover hidden:', subPop.hidden, 'aria-expanded:', subBtn.getAttribute('aria-expanded'));
-    if (!isOpen) {
+    subPop.hidden = !subPop.hidden;
+    const isNowOpen = !subPop.hidden;
+    subBtn.setAttribute('aria-expanded', isNowOpen);
+    if (isNowOpen) {
       syncSubscribePrimary();
       if (typeof umami !== 'undefined') umami.track('subscribe-open');
     }
