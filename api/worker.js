@@ -217,6 +217,60 @@ function toCSV(items) {
   return [COLS.join(','), ...items.map(it => COLS.map(c => field(it[c])).join(','))].join('\r\n');
 }
 
+function xmlEscape(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+function toRSS(items, namespace) {
+  const SITE = 'https://entratracker.aboutcloud.io';
+  const SELF = 'https://api.aboutcloud.io/entra-tracker?format=rss'
+               + (namespace === 'external-id' ? '&namespace=external-id' : '');
+  const titleSuffix = namespace === 'external-id' ? ' (External ID)' : '';
+  // newest-first by firstSeen, capped at 50
+  const sorted = items.slice().sort((a, b) => {
+    const da = a.firstSeen || a.announcedDate || '';
+    const db = b.firstSeen || b.announcedDate || '';
+    return db.localeCompare(da);
+  }).slice(0, 50);
+  const now = new Date().toUTCString();
+  const entries = sorted.map(it => {
+    const dateStr = it.firstSeen || it.announcedDate || new Date().toISOString().split('T')[0];
+    const pub = new Date(dateStr + 'T00:00:00Z').toUTCString();
+    const deadlineNote = it.deadline ? ` (deadline ${it.deadline}, ${it.daysRemaining} days left)` : '';
+    const desc = (it.description || '') + deadlineNote;
+    return [
+      '    <item>',
+      '      <title>' + xmlEscape(it.title) + '</title>',
+      '      <link>' + xmlEscape(it.link || SITE) + '</link>',
+      '      <guid isPermaLink="false">' + xmlEscape(it.id) + '</guid>',
+      '      <pubDate>' + pub + '</pubDate>',
+      '      <category>' + xmlEscape(it.category) + '</category>',
+      '      <description>' + xmlEscape(desc) + '</description>',
+      '    </item>'
+    ].join('\n');
+  }).join('\n');
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">',
+    '  <channel>',
+    '    <title>Entra Change Tracker' + titleSuffix + '</title>',
+    '    <link>' + SITE + '</link>',
+    '    <atom:link href="' + xmlEscape(SELF) + '" rel="self" type="application/rss+xml" />',
+    '    <description>Microsoft Entra ID retirements, breaking changes, previews and new features' + titleSuffix + '</description>',
+    '    <language>en</language>',
+    '    <lastBuildDate>' + now + '</lastBuildDate>',
+    entries,
+    '  </channel>',
+    '</rss>'
+  ].join('\n');
+}
+
+function selectByNamespace(items, ns) {
+  return ns === 'external-id' ? items.filter(i => i.namespace === 'external-id') : items;
+}
+
 // ── FETCH HELPER ────────────────────────────────────────────────────────────
 async function fetchText(url) {
   const res = await fetch(url, {
@@ -729,6 +783,7 @@ export default {
 
     const forceRefresh = url.searchParams.get('refresh') === '1';
     const format       = url.searchParams.get('format');
+    const nsParam      = url.searchParams.get('namespace');
 
     if (env.ENTRA_CACHE && !forceRefresh) {
       try {
@@ -742,6 +797,17 @@ export default {
                 'Content-Type':        'text/csv; charset=utf-8',
                 'Content-Disposition': 'attachment; filename="entra-tracker.csv"',
                 'X-Cache':             'HIT',
+                ...corsHeaders(origin),
+              },
+            });
+          }
+          if (format === 'rss') {
+            const data = JSON.parse(cached);
+            return new Response(toRSS(selectByNamespace(data.items || [], nsParam), nsParam), {
+              headers: {
+                'Content-Type':  'application/rss+xml; charset=utf-8',
+                'X-Cache':       'HIT',
+                'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
                 ...corsHeaders(origin),
               },
             });
@@ -784,6 +850,17 @@ export default {
             'Content-Type':        'text/csv; charset=utf-8',
             'Content-Disposition': 'attachment; filename="entra-tracker.csv"',
             'X-Cache':             'MISS',
+            ...corsHeaders(origin),
+          },
+        });
+      }
+
+      if (format === 'rss') {
+        return new Response(toRSS(selectByNamespace(data.items || [], nsParam), nsParam), {
+          headers: {
+            'Content-Type':  'application/rss+xml; charset=utf-8',
+            'X-Cache':       'MISS',
+            'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
             ...corsHeaders(origin),
           },
         });
