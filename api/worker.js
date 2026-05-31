@@ -39,6 +39,21 @@ const ALLOWED_ORIGINS = [
 const CACHE_TTL_SECONDS = 4 * 60 * 60; // 4 hours
 const CACHE_KEY         = 'entra_tracker_v3';
 
+// ── RETENTION HORIZONS ───────────────────────────────────────────────────────
+// How long items stay in the feed before being dropped as objectively too old.
+// DATED items (have a deadline) are kept until DEADLINE_RETENTION_DAYS past the
+// deadline (the deadline is the true relevance anchor). DATELESS items age out by
+// announcedDate, per category. Unknown announcedDate -> kept (rely on Microsoft
+// pruning the source). All relative-day math, so year rollover is automatic.
+const DEADLINE_RETENTION_DAYS = 365;          // drop dated items >365d past deadline
+const RETENTION_DAYS = {
+  retirement:  548,   // ~18 months -- keep deprecation guidance longest
+  breaking:    548,   // ~18 months
+  preview:     365,   // ~12 months -- old previews have GA'd or been dropped
+  new_feature: 365,   // ~12 months -- a year-old GA is "how Entra works", not a change
+};
+const RETENTION_DEFAULT_DAYS = 365;
+
 // ── SOURCES ────────────────────────────────────────────────────────────────
 
 // Primary: GitHub raw markdown -- the actual What's New page
@@ -954,13 +969,20 @@ async function buildTrackerData(prevItems) {
     if (!seen.has(key)) { seen.add(key); deduped.push(item); }
   }
 
-  // 1-year retention cap: drop items whose deadline passed more than 365 days
-  // ago. Items with no deadline, or future/recent deadlines, are always kept.
-  // Keying on daysUntilUTC keeps this consistent with deriveStatus.
+  // Retention: keep the feed bounded and relevance-decayed.
+  //  - Dated items: drop once the deadline is >DEADLINE_RETENTION_DAYS in the past
+  //    (consistent with deriveStatus, which also drops at -365).
+  //  - Dateless items: age out by announcedDate per category (RETENTION_DAYS).
+  //    Unknown announcedDate -> kept (fall back to Microsoft pruning the source).
+  const nowMs = Date.now();
   const capped = deduped.filter(it => {
-    if (!it.deadline) return true;
-    const d = daysUntilUTC(new Date(it.deadline + 'T00:00:00Z'));
-    return d >= -365;
+    if (it.deadline) {
+      return daysUntilUTC(new Date(it.deadline + 'T00:00:00Z')) >= -DEADLINE_RETENTION_DAYS;
+    }
+    if (!it.announcedDate) return true;
+    const horizon = RETENTION_DAYS[it.category] ?? RETENTION_DEFAULT_DAYS;
+    const ageDays = (nowMs - new Date(it.announcedDate + 'T00:00:00Z').getTime()) / 86400000;
+    return ageDays <= horizon;
   });
 
   const diffed = applyDiff(capped, prevItems);
