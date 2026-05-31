@@ -1791,63 +1791,85 @@ document.getElementById('sort-select').addEventListener('change', e => {
 });
 
 // Subscribe / Export popover
-const subBtn = document.getElementById('subBtn');
-const subPop = document.getElementById('subPop');
-
-function syncSubscribePrimary() {
-  const rssFullRow = document.querySelector('[data-row="rss-full"]');
-  const rssExtIdRow = document.querySelector('[data-row="rss-extid"]');
-  if (af === 'external-id') {
-    rssExtIdRow.classList.add('primary');
-    rssFullRow.classList.remove('primary');
-  } else {
-    rssFullRow.classList.add('primary');
-    rssExtIdRow.classList.remove('primary');
-  }
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initSubscribe);
+} else {
+  initSubscribe();
 }
 
-subBtn.addEventListener('click', () => {
-  const isOpen = !subPop.hidden;
-  subPop.hidden = !isOpen;
-  subBtn.setAttribute('aria-expanded', !isOpen);
-  if (!isOpen) {
-    syncSubscribePrimary();
-    if (typeof umami !== 'undefined') umami.track('subscribe-open');
-  }
-});
+function initSubscribe() {
+  const subBtn = document.getElementById('subBtn');
+  const subPop = document.getElementById('subPop');
 
-document.addEventListener('click', e => {
-  if (!document.querySelector('.subscribe-wrap').contains(e.target) && !subPop.hidden) {
-    subPop.hidden = true;
-    subBtn.setAttribute('aria-expanded', 'false');
+  if (!subBtn || !subPop) {
+    console.warn('Subscribe button or popover not found');
+    return;
   }
-});
 
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !subPop.hidden) {
-    subPop.hidden = true;
-    subBtn.setAttribute('aria-expanded', 'false');
+  function syncSubscribePrimary() {
+    const rssFullRow = document.querySelector('[data-row="rss-full"]');
+    const rssExtIdRow = document.querySelector('[data-row="rss-extid"]');
+    if (rssFullRow && rssExtIdRow) {
+      if (af === 'external-id') {
+        rssExtIdRow.classList.add('primary');
+        rssFullRow.classList.remove('primary');
+      } else {
+        rssFullRow.classList.add('primary');
+        rssExtIdRow.classList.remove('primary');
+      }
+    }
   }
-});
 
-document.querySelectorAll('.sub-copy').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    const url = btn.dataset.url;
-    const row = btn.closest('[data-row]').dataset.row;
-    try {
-      await navigator.clipboard.writeText(url);
-      btn.classList.add('copied');
-      btn.textContent = 'Copied';
-      if (typeof umami !== 'undefined') umami.track('subscribe-copy', { format: row });
-      setTimeout(() => {
-        btn.classList.remove('copied');
-        btn.textContent = 'Copy';
-      }, 1200);
-    } catch (err) {
-      console.error('copy:', err.message);
+  subBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = !subPop.hidden;
+    subPop.hidden = !isOpen;
+    subBtn.setAttribute('aria-expanded', !isOpen);
+    if (!isOpen) {
+      syncSubscribePrimary();
+      if (typeof umami !== 'undefined') umami.track('subscribe-open');
     }
   });
-});
+
+  document.addEventListener('click', e => {
+    const wrap = document.querySelector('.subscribe-wrap');
+    if (wrap && !wrap.contains(e.target) && !subPop.hidden) {
+      subPop.hidden = true;
+      subBtn.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !subPop.hidden) {
+      subPop.hidden = true;
+      subBtn.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  document.querySelectorAll('.sub-copy').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const url = btn.dataset.url;
+      const row = btn.closest('[data-row]')?.dataset.row;
+      if (!url || !row) {
+        console.warn('Missing url or row data', { url, row });
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        btn.classList.add('copied');
+        btn.textContent = 'Copied';
+        if (typeof umami !== 'undefined') umami.track('subscribe-copy', { format: row });
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          btn.textContent = 'Copy';
+        }, 1200);
+      } catch (err) {
+        console.error('copy failed:', err.message);
+      }
+    });
+  });
+}
 
 // Load data
 async function load(){
