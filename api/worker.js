@@ -151,20 +151,78 @@ function daysUntilUTC(deadline) {
   return Math.round((deadUTC - nowUTC) / 86400000);
 }
 
-function extractDeadline(text) {
+// Expiry/cutoff language that justifies treating a nearby date as a DEADLINE
+// (as opposed to an announcement/release/rollout-start date).
+const DEADLINE_LANGUAGE = [
+  'retire', 'retired', 'retirement', 'retiring',
+  'deprecat',                       // deprecate/deprecated/deprecation
+  'end of support', 'end of life', 'end of sale', 'eol',
+  'will be removed', 'being removed', 'no longer support',
+  'no longer work', 'no longer available', 'stop working', 'stop support',
+  'must migrate', 'must update', 'must upgrade', 'required action',
+  'sunset', 'cutoff', 'cut-off', 'last day', 'will fail', 'will break',
+  'will be blocked', 'will be enforced', 'enforcement begins'
+];
+
+// True if any expiry phrase occurs within `window` chars of the matched
+// date string inside text. Keeps "deprecated ... 2026-10-28" (deadline)
+// distinct from "deprecated basic auth" sitting paragraphs away from an
+// unrelated "Starting May 2026" (not a deadline for THIS date).
+function hasExpiryLanguageNear(text, dateStr, window) {
+  const lower = text.toLowerCase();
+  const idx = lower.indexOf(dateStr.toLowerCase());
+  if (idx === -1) return false;
+  const from = Math.max(0, idx - window);
+  const to   = Math.min(lower.length, idx + dateStr.length + window);
+  const slice = lower.slice(from, to);
+  return DEADLINE_LANGUAGE.some(k => slice.includes(k));
+}
+
+function extractDeadline(text, category) {
   const lower = text.toLowerCase();
 
+  // Try each date format in order (ISO, MDY, DMY, MY)
+  // Return the first matching date only if rule A or B is satisfied.
+
   const isoM = lower.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (isoM) { const d = new Date(`${isoM[1]}-${isoM[2]}-${isoM[3]}`); if (!isNaN(d)) return d; }
+  if (isoM) {
+    const d = new Date(`${isoM[1]}-${isoM[2]}-${isoM[3]}`);
+    if (!isNaN(d)) {
+      if (category === 'retirement' || category === 'breaking') return d;
+      if (hasExpiryLanguageNear(text, isoM[0], 160)) return d;
+      return null;
+    }
+  }
 
   const mdyM = lower.match(/(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2}),?\s+(\d{4})/);
-  if (mdyM) { const d = new Date(+mdyM[3], MONTHS[mdyM[1]]-1, +mdyM[2]); if (!isNaN(d)) return d; }
+  if (mdyM) {
+    const d = new Date(+mdyM[3], MONTHS[mdyM[1]]-1, +mdyM[2]);
+    if (!isNaN(d)) {
+      if (category === 'retirement' || category === 'breaking') return d;
+      if (hasExpiryLanguageNear(text, mdyM[0], 160)) return d;
+      return null;
+    }
+  }
 
   const dmyM = lower.match(/(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{4})/);
-  if (dmyM) { const d = new Date(+dmyM[3], MONTHS[dmyM[2]]-1, +dmyM[1]); if (!isNaN(d)) return d; }
+  if (dmyM) {
+    const d = new Date(+dmyM[3], MONTHS[dmyM[2]]-1, +dmyM[1]);
+    if (!isNaN(d)) {
+      if (category === 'retirement' || category === 'breaking') return d;
+      if (hasExpiryLanguageNear(text, dmyM[0], 160)) return d;
+      return null;
+    }
+  }
 
   const myM = lower.match(/(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{4})/);
-  if (myM) { const d = new Date(+myM[2], MONTHS[myM[1]], 0); if (!isNaN(d)) return d; }
+  if (myM) {
+    const d = new Date(+myM[2], MONTHS[myM[1]], 0);
+    if (!isNaN(d)) {
+      if (category === 'retirement' || category === 'breaking') return d;
+      if (hasExpiryLanguageNear(text, myM[0], 160)) return d;
+      return null;
+    }
+  }
 
   return null;
 }
@@ -338,13 +396,13 @@ function parseWhatsNewMarkdown(markdown) {
 
       const description = descLines.slice(0, 4).join(' ').slice(0, 600);
 
-      // Extract deadline from CONTENT ONLY -- never from currentMonth (pub date != deadline)
-      const contentText = `${title} ${description}`;
-      const deadline    = extractDeadline(contentText);
-
       // Derive category -- prefer explicit Type field
       const typeLower = typeVal.toLowerCase();
       const category  = TYPE_TO_CATEGORY[typeLower] || classifyByKeyword(title, description);
+
+      // Extract deadline from CONTENT ONLY -- never from currentMonth (pub date != deadline)
+      const contentText = `${title} ${description}`;
+      const deadline    = extractDeadline(contentText, category);
 
       const namespace = isExternalId(title, serviceCategory) ? 'external-id' : 'entra-id';
 
@@ -409,7 +467,7 @@ function parseDocsChangelog(markdown, sourceLabel, namespace, subtype) {
 
     const fullText = `${title} ${description} ${section}`;
     const category = classifyByKeyword(title, description);
-    const deadline = extractDeadline(fullText);
+    const deadline = extractDeadline(fullText, category);
 
     // Docs changelogs: only keep retirements, breaking, and previews -- skip plain updates
     if (category === 'new_feature') continue;
@@ -468,8 +526,11 @@ function parseFSLogixDocs(html) {
   }
 
   for (const text of blocks) {
+    // Determine category first (breaking vs preview)
+    const category = /action required|breaking|will fail|must|before.*update/i.test(text) ? 'breaking' : 'preview';
+
     // Only keep items with a deadline date OR explicit breaking language
-    const hasDeadline = extractDeadline(text) !== null;
+    const hasDeadline = extractDeadline(text, category) !== null;
     const hasActionLang = /action required|upcoming change|breaking|will fail|access issues|disruption|must upgrade|before.*update/i.test(text);
     if (!hasDeadline && !hasActionLang) continue;
 
@@ -479,8 +540,7 @@ function parseFSLogixDocs(html) {
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const deadline  = extractDeadline(text);
-    const category  = /action required|breaking|will fail|must|before.*update/i.test(text) ? 'breaking' : 'preview';
+    const deadline = extractDeadline(text, category);
     const status    = deriveStatus(deadline);
     const days      = daysUntilUTC(deadline);
 
@@ -556,7 +616,7 @@ function transformRSSItems(raw) {
 
     const text     = `${item.title} ${item.description}`;
     const category = classifyByKeyword(item.title, item.description);
-    const deadline = extractDeadline(text);
+    const deadline = extractDeadline(text, category);
     const status   = deriveStatus(deadline);
     const impact   = deriveImpact(category, text);
     const days     = daysUntilUTC(deadline);
