@@ -1609,7 +1609,7 @@ function entryHTML(item){
   const affected = itemMatchesProfile(item);
   const tenantBadge = affected ? `<span class="badge i-tenant">&#127919; Affects your tenant</span>` : '';
   const extIdBadge  = item.namespace === 'external-id' ? `<span class="badge i-external-id">&#x1F7E3; External ID</span>` : '';
-  const newBadge    = isRecentlyNew(item, coldStart) ? `<span class="badge i-new-recent">&#10024; New</span>` : '';
+  const newBadge    = isRecentlyNew(item, coldStart) ? `<span class="badge i-new-recent">&#10024; Just added</span>` : '';
   const starred  = radarIds.has(item.id);
   const radarBtn = `<button class="radar-btn${starred?' on':''}" onclick="toggleRadar('${item.id}')" title="${starred?'Remove from On Radar':'Add to On Radar'}" aria-label="${starred?'Remove from radar':'Add to radar'}">${starred?'&#9733;':'&#9734;'}</button>`;
 
