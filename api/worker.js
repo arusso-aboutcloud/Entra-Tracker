@@ -2,17 +2,21 @@
  * Entra Tracker -- Cloudflare Worker v3
  * Endpoint: api.aboutcloud.io/entra-tracker
  *
- * Sources (all GitHub raw -- MicrosoftDocs official repos):
+ * Sources (all Microsoft official -- MicrosoftDocs GitHub repos + learn.microsoft.com):
  *   1. entra-docs: fundamentals/whats-new.md       -> core Entra ID (+ B2C/ExternalID items inside)
- *   2. techcommunity RSS                            -> Entra blog announcements
+ *   2. learn.microsoft.com: FSLogix release notes  -> Azure Files / Entra Kerberos breaking-change callouts
  *   3. entra-docs: external-id/whats-new-docs.md   -> External ID docs changelog
- *   4. azure-docs: active-directory-b2c/whats-new-docs.md -> B2C docs changelog
+ *   4. azure-docs: active-directory-b2c/whats-new-docs.md -> B2C docs changelog (B2C is end-of-sale)
  *   5. entra-docs: commits on external-id/customers -> External ID how-to docs (pre-changelog)
+ *
+ * NOTE: parseRSS()/transformRSSItems() are retained as reusable infrastructure
+ * for a future official Atom/RSS feed (e.g. Azure Updates) but are NOT wired
+ * into buildTrackerData today -- no blog/RSS source is currently ingested.
  *
  * Parsing strategy:
  *   - Source 1: H3 + **Type:** + **Service category:** blocks (feature releases)
- *   - Source 2: RSS XML
- *   - Sources 3-4: bullet * [Title](url) - description (docs change logs)
+ *   - Source 2: HTML alert/callout divs + "action required" paragraphs
+ *   - Sources 3-4: bullet "- [Title](url) - description" (docs change logs; "*" also accepted)
  *   - Source 5: GitHub Commits API -- watches docs/external-id/customers for new how-tos
  *               and guides BEFORE they appear in the curated whats-new-docs.md index.
  *               Anonymous API rate limit: 60/hr; 4h cron + KV keeps us well under.
@@ -444,17 +448,22 @@ function parseWhatsNewMarkdown(markdown) {
 }
 
 // ── PARSER 2: Docs changelog (bullet * [Title](url) - description) ─────────
-function parseDocsChangelog(markdown, sourceLabel, namespace, subtype) {
+function parseDocsChangelog(markdown, sourceLabel, namespace, subtype, linkBase) {
   const results = [];
   const lines   = markdown.split('\n');
   let section   = '';
+  const base    = linkBase || 'https://learn.microsoft.com/en-us/entra/external-id/';
 
   for (const line of lines) {
+    // Month section header: "## January 2026". The "### Updated articles" /
+    // "### New article" sub-headers and "# [tab](#...)" headers are ignored
+    // (they need >=3 or exactly 1 hash, so neither matches ^##\s).
     const h2 = line.match(/^##\s+(.+)/);
     if (h2) { section = h2[1].trim(); continue; }
 
-    // * [Article title](url) - Description
-    const bullet = line.match(/^\*\s+\[([^\]]+)\]\(([^)]+)\)(?:\s*[-–]\s*(.+))?/);
+    // Bullet: "- [Title](url) - Description" or "* [Title](url) - Description".
+    // Microsoft switched these changelogs from "*" to "-" markers; accept both.
+    const bullet = line.match(/^[\*\-]\s+\[([^\]]+)\]\(([^)]+)\)(?:\s*[-–]\s*(.+))?/);
     if (!bullet) continue;
 
     const title       = bullet[1].trim();
@@ -463,9 +472,10 @@ function parseDocsChangelog(markdown, sourceLabel, namespace, subtype) {
 
     if (title.length < 5) continue;
 
-    const link = rawLink.startsWith('http')
-      ? rawLink
-      : `https://learn.microsoft.com/en-us/entra/external-id/${rawLink}`;
+    // Resolve relative doc links against the source's base path. Strip leading
+    // "./"/"../" segments and the ".md" extension so the published URL resolves.
+    const cleanRel = rawLink.replace(/^(\.\.?\/)+/, '').replace(/\.md($|#)/, '$1');
+    const link = rawLink.startsWith('http') ? rawLink : base + cleanRel;
 
     const fullText = `${title} ${description} ${section}`;
     const category = classifyByKeyword(title, description);
@@ -699,6 +709,7 @@ function parseExternalIdCommits(jsonText) {
 async function buildTrackerData(prevItems) {
   const allItems = [];
   const errors   = [];
+  const warnings = [];
 
   // Source 1: Main Entra What's New markdown
   let countWN = 0;
@@ -707,6 +718,7 @@ async function buildTrackerData(prevItems) {
     const items = parseWhatsNewMarkdown(md);
     allItems.push(...items);
     countWN = items.length;
+    if (countWN === 0) warnings.push('whats-new.md: 0 items parsed - PRIMARY source format may have changed');
     console.log(`whats-new.md: ${items.length} items`);
   } catch (err) { errors.push(`whats-new: ${err.message}`); console.error(err.message); }
 
@@ -726,20 +738,26 @@ async function buildTrackerData(prevItems) {
   let countEI = 0;
   try {
     const md    = await fetchText(EXTERNAL_ID_DOCS_URL);
-    const items = parseDocsChangelog(md, 'external-id-docs', 'external-id', 'External ID');
+    const rawBullets = (md.match(/^[\*\-]\s+\[/gm) || []).length;
+    const items = parseDocsChangelog(md, 'external-id-docs', 'external-id', 'External ID',
+                                     'https://learn.microsoft.com/en-us/entra/external-id/');
     allItems.push(...items);
     countEI = items.length;
-    console.log(`external-id-docs: ${items.length} items`);
+    if (rawBullets === 0) warnings.push('external-id-docs: no bullet entries matched - upstream format may have changed');
+    console.log(`external-id-docs: ${items.length} items (${rawBullets} raw bullets)`);
   } catch (err) { errors.push(`external-id-docs: ${err.message}`); console.error(err.message); }
 
   // Source 4: B2C docs changelog
   let countB2C = 0;
   try {
     const md    = await fetchText(B2C_DOCS_URL);
-    const items = parseDocsChangelog(md, 'b2c-docs', 'external-id', 'Azure AD B2C');
+    const rawBullets = (md.match(/^[\*\-]\s+\[/gm) || []).length;
+    const items = parseDocsChangelog(md, 'b2c-docs', 'external-id', 'Azure AD B2C',
+                                     'https://learn.microsoft.com/en-us/azure/active-directory-b2c/');
     allItems.push(...items);
     countB2C = items.length;
-    console.log(`b2c-docs: ${items.length} items`);
+    if (rawBullets === 0) warnings.push('b2c-docs: no bullet entries matched - upstream format may have changed');
+    console.log(`b2c-docs: ${items.length} items (${rawBullets} raw bullets)`);
   } catch (err) { errors.push(`b2c-docs: ${err.message}`); console.error(err.message); }
 
   // Source 5: External ID customer docs -- direct commit watch (pre-changelog, passkey/FIDO2 coverage)
@@ -755,9 +773,11 @@ async function buildTrackerData(prevItems) {
     console.log(`external-id-commits: ${items.length} items`);
   } catch (err) { errors.push(`external-id-commits: ${err.message}`); console.error(err.message); }
 
-  // Sort: expired -> red -> yellow -> green, then days asc,
-  // then announcedDate desc (newest first) as tiebreak when status+days are equal
-  const ORDER = { expired:0, red:1, yellow:2, green:3 };
+  // Sort: expired_recent (still actionable) -> expired -> red -> yellow ->
+  // green, then days asc, then announcedDate desc (newest first) as tiebreak
+  // when status+days are equal. expired_recent ranks top because a deadline
+  // that just passed may mean the viewer is already affected.
+  const ORDER = { expired_recent:0, expired:1, red:2, yellow:3, green:4 };
   allItems.sort((a, b) => {
     const sd = (ORDER[a.status]??4) - (ORDER[b.status]??4);
     if (sd !== 0) return sd;
@@ -821,7 +841,8 @@ async function buildTrackerData(prevItems) {
       'b2c-docs':            countB2C,
       'external-id-commits': countEIC,
     },
-    errors:         errors.length ? errors : undefined,
+    errors:         errors.length   ? errors   : undefined,
+    warnings:       warnings.length ? warnings : undefined,
     items:          diffed,
   };
 }

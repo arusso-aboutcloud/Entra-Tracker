@@ -111,13 +111,17 @@ Returns full article catalog with metadata.
 
 ## Data Sources
 
+All sources are Microsoft-official (MicrosoftDocs GitHub repos + learn.microsoft.com).
+
 | # | Source | Type | Description |
 |---|---|---|---|
-| 1 | `entra-docs: fundamentals/whats-new.md` | Markdown | Core Entra ID + B2C/External ID what's-new |
-| 2 | TechCommunity RSS | RSS | Entra blog announcements |
-| 3 | `entra-docs: external-id/whats-new-docs.md` | Markdown | External ID docs changelog |
-| 4 | `azure-docs: active-directory-b2c/whats-new-docs.md` | Markdown | B2C docs changelog |
+| 1 | `entra-docs: fundamentals/whats-new.md` | Markdown | Core Entra ID + B2C/External ID what's-new (primary source) |
+| 2 | `learn.microsoft.com: FSLogix release notes` | HTML | Azure Files / Entra Kerberos breaking-change callouts (`is-warning`/`is-important` alerts + "action required" notices) |
+| 3 | `entra-docs: external-id/whats-new-docs.md` | Markdown | External ID docs changelog (`- [Title](url)` bullets) |
+| 4 | `azure-docs: active-directory-b2c/whats-new-docs.md` | Markdown | B2C docs changelog (B2C is end-of-sale; winding down) |
 | 5 | `entra-docs: commits — external-id/customers` | GitHub Commits API | External ID customer how-tos (direct repo watch, pre-changelog) — catches passkey/FIDO2 guides before MS adds them to the curated index |
+
+Changelog parsers track raw-bullet counts; if a source matches zero bullets the API response includes a `warnings[]` entry so upstream format drift surfaces instead of failing silently.
 
 ---
 
