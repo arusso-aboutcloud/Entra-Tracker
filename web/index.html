@@ -618,6 +618,7 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
 .entry.s-yel    .entry-strip { background: var(--yel); }
 .entry.s-grn    .entry-strip { background: var(--grn); }
 .entry.s-exp    .entry-strip { background: var(--dim); }
+.entry.s-exp-recent .entry-strip { background: var(--red); }
 
 .entry-body { padding: 1.25rem 1.5rem; min-width: 0; }
 
@@ -724,6 +725,7 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
 .cd-num.s-yel { color: var(--yel); animation: sn-glow-yel  3s ease-in-out infinite 0.3s; }
 .cd-num.s-grn { color: var(--grn); animation: sn-glow-grn  3s ease-in-out infinite 0.6s; }
 .cd-num.s-exp { color: var(--muted); font-size: 0.85rem; letter-spacing: 0.05em; }
+.cd-num.cd-exp-recent { color: var(--red); }
 
 /* States */
 .state-msg {
@@ -1551,8 +1553,13 @@ function fmtAnnounced(iso) {
 
 function cdHTML(item){
   if(item.deadline) {
-    if(item.status==='expired'){
-      return `<div class="cd-num s-exp">EXPIRED</div><div class="cd-date">${item.deadline}</div>`;
+    if(item.status==='expired' || item.status==='expired_recent'){
+      const ago = (item.daysRemaining != null) ? Math.abs(item.daysRemaining) : null;
+      const agoTxt = ago != null ? `${ago} day${ago!==1?'s':''} ago` : 'expired';
+      const recentCls = item.status==='expired_recent' ? ' cd-exp-recent' : '';
+      return `<div class="cd-num s-exp${recentCls}">EXPIRED</div>
+              <div class="cd-lbl">${agoTxt}</div>
+              <div class="cd-date">${item.deadline}</div>`;
     }
     const d = item.daysRemaining;
     const sc = item.status==='red'?'s-red':item.status==='yellow'?'s-yel':'s-grn';
@@ -1570,7 +1577,7 @@ function entryHTML(item){
   const art      = (item.title ? findArt(item.title) : null) || item.articleUrl;
   const ms       = item.link ? `<a class="lnk" href="${esc(item.link)}" target="_blank" rel="noopener">MS Docs &#8599;</a>` : '';
   const ar       = art       ? `<a class="lnk art" href="${esc(art)}" target="_blank">Read post &#8599;</a>` : '';
-  const sc       = item.status==='red'?'s-red':item.status==='yellow'?'s-yel':item.status==='green'?'s-grn':'s-exp';
+  const sc       = item.status==='red'?'s-red':item.status==='yellow'?'s-yel':item.status==='green'?'s-grn':(item.status==='expired_recent'?'s-exp s-exp-recent':'s-exp');
   const affected = itemMatchesProfile(item);
   const tenantBadge = affected ? `<span class="badge i-tenant">&#127919; Affects your tenant</span>` : '';
   const extIdBadge  = item.namespace === 'external-id' ? `<span class="badge i-external-id">&#x1F7E3; External ID</span>` : '';
@@ -1599,8 +1606,11 @@ function entryHTML(item){
 
 function getFiltered(){
   const items = all.filter(i => {
+    // "Hide expired" only suppresses OLD expired (91-365d). Recently-expired
+    // (<=90d) stays visible by default - it may mean you're already affected.
     if(hideExpired && i.status === 'expired' && af !== 'expired' && as_ !== 'expired') return false;
-    if(af === 'expired' && i.status !== 'expired') return false;
+    // Expired tab shows BOTH tiers (recent + old).
+    if(af === 'expired' && i.status !== 'expired' && i.status !== 'expired_recent') return false;
     if(af === 'tenant' && !itemMatchesProfile(i)) return false;
     if(af === 'external-id' && i.namespace !== 'external-id') return false;
     if(af === 'radar' && !radarIds.has(i.id)) return false;
@@ -1652,12 +1662,12 @@ function render(){
 }
 
 function updateStats(items){
-  const c = {red:0, yellow:0, green:0, expired:0};
+  const c = {red:0, yellow:0, green:0, expired:0, expired_recent:0};
   items.forEach(i => { if(c[i.status]!==undefined) c[i.status]++; });
   document.getElementById('sn-red').textContent = c.red;
   document.getElementById('sn-yel').textContent = c.yellow;
   document.getElementById('sn-grn').textContent = c.green;
-  document.getElementById('sn-exp').textContent = c.expired;
+  document.getElementById('sn-exp').textContent = c.expired + c.expired_recent;
   document.getElementById('stats').style.display = 'grid';
 
   // External ID breakdown
