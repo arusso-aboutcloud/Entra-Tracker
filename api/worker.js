@@ -8,15 +8,17 @@
  *   3. entra-docs: external-id/whats-new-docs.md   -> External ID docs changelog
  *   4. azure-docs: active-directory-b2c/whats-new-docs.md -> B2C docs changelog (B2C is end-of-sale)
  *   5. entra-docs: commits on external-id/customers -> External ID how-to docs (pre-changelog)
+ *   6. developer.microsoft.com: Graph changelog RSS  -> Entra API/resource deprecations (e.g. PIM)
  *
  * NOTE: parseRSS()/transformRSSItems() are retained as reusable infrastructure
- * for a future official Atom/RSS feed (e.g. Azure Updates) but are NOT wired
- * into buildTrackerData today -- no blog/RSS source is currently ingested.
+ * but are NOT wired into buildTrackerData today (no blog feed is ingested). The
+ * Graph changelog (source 6) uses its own dedicated parser, not parseRSS.
  *
  * Parsing strategy:
  *   - Source 1: H3 + **Type:** + **Service category:** blocks (feature releases)
  *   - Source 2: HTML alert/callout divs + "action required" paragraphs
  *   - Sources 3-4: bullet "- [Title](url) - description" (docs change logs; "*" also accepted)
+ *   - Source 6: RSS items, filtered to Entra resource/API-level deprecations only
  *   - Source 5: GitHub Commits API -- watches docs/external-id/customers for new how-tos
  *               and guides BEFORE they appear in the curated whats-new-docs.md index.
  *               Anonymous API rate limit: 60/hr; 4h cron + KV keeps us well under.
@@ -54,6 +56,12 @@ const B2C_DOCS_URL = 'https://raw.githubusercontent.com/MicrosoftDocs/azure-docs
 
 // External ID customer docs -- direct commit watch (catches how-tos before curated changelog)
 const COMMITS_API_URL = 'https://api.github.com/repos/MicrosoftDocs/entra-docs/commits?path=docs/external-id/customers&per_page=100';
+
+// Microsoft Graph changelog (official dev-portal RSS) -- authoritative source for
+// Graph API resource/endpoint DEPRECATIONS (e.g. the PIM iteration 2 API retirement)
+// that never appear in whats-new.md. The feed is a 2500+ item firehose of granular
+// API edits, so it is filtered HARD downstream (see parseGraphChangelog).
+const GRAPH_CHANGELOG_URL = 'https://developer.microsoft.com/en-us/graph/changelog/rss/';
 
 // ── EXTERNAL ID DETECTION ──────────────────────────────────────────────────
 const EXTERNAL_ID_SERVICE_CATEGORIES = [
@@ -705,6 +713,91 @@ function parseExternalIdCommits(jsonText) {
   return results;
 }
 
+// ── PARSER 6: Microsoft Graph changelog (official dev-portal RSS) ───────────
+// The changelog logs every Graph API surface edit (2500+ items, mostly additive
+// "Added the X type" noise). We keep ONLY high-signal items: Entra-relevant
+// workload AND a resource/API-LEVEL deprecation/retirement, AND (a real deadline
+// OR announced within the last year). This catches the PIM iteration 2 API
+// retirement and future Entra API deprecations without flooding the admin-focused
+// tracker with developer-level minutiae.
+const GRAPH_ENTRA_RE = /privilegedaccess|privileged identity|conditionalaccess|conditional access|directoryrole|directory role|\bsignin\b|authenticationmethod|crosstenant|\bentra\b|identityprotection|riskyuser|namedlocation|azure ad role|microsoft entra/i;
+// Headline deprecation/retirement semantics (future action), tested on the FIRST
+// sentence only. Bare past-tense "Removed"/"Added" are intentionally excluded --
+// the changelog bundles many edits per item, so we key on the lead change verb.
+const GRAPH_DEPRECATION_RE = /\b(deprecated|deprecating|retiring|retired|sunset|will be retired|will be removed|will stop returning|will fail|will be blocked|no longer be (available|supported))\b/i;
+
+// Minimal HTML entity decode + tag strip for changelog descriptions (the feed
+// double-encodes HTML: &lt;div&gt;...). Numeric entities (e.g. &#xD;) -> space.
+function graphHtmlDecode(s) {
+  return String(s == null ? '' : s)
+    .replace(/&#x?[0-9a-fA-F]+;/g, ' ')           // numeric entities (e.g. &#xD;) -> space
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')  // decode encoded tags FIRST...
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/<[^>]+>/g, ' ')                     // ...THEN strip the now-real tags
+    .replace(/&amp;/g, '&')                       // decode &amp; last to avoid re-forming tags
+    .replace(/\s+/g, ' ').trim();
+}
+
+function parseGraphChangelog(xml) {
+  const results = [];
+  const seen    = new Set();
+  const nowMs   = Date.now();
+
+  for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)) {
+    const block   = m[1];
+    const rawDesc = (block.match(/<description>([\s\S]*?)<\/description>/i) || [])[1] || '';
+    const desc    = graphHtmlDecode(rawDesc);
+    if (!desc) continue;
+
+    // The changelog <title> is just the workload ("Identity and access") and each
+    // item bundles many edits. Key on the FIRST sentence (the headline change):
+    // it must be a deprecation/retirement, and the item must be Entra-relevant.
+    const firstSentence = desc.split(/\.\s/)[0];
+    if (!GRAPH_DEPRECATION_RE.test(firstSentence)) continue;
+    if (!GRAPH_ENTRA_RE.test(desc)) continue;
+
+    const pub           = (block.match(/<pubDate>(.*?)<\/pubDate>/i) || [])[1] || '';
+    const announcedDate = pubDateToISO(pub);
+    // The filter guarantees deprecation semantics, so treat as retirement -- this
+    // also lets extractDeadline (rule A) capture a date stated later in the block.
+    const category      = 'retirement';
+    const deadline      = extractDeadline(desc, category);
+
+    // Keep only actionable items: a real deadline, or announced within the last
+    // year. Drops ancient already-completed deprecations that carry no future date.
+    const recent = announcedDate &&
+      (nowMs - new Date(announcedDate + 'T00:00:00Z').getTime()) <= 366 * 86400000;
+    if (!deadline && !recent) continue;
+
+    const title = `[Graph API] ${firstSentence.slice(0, 130)}`;
+    const key = title.toLowerCase().slice(0, 60);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const status    = deriveStatus(deadline);
+    const days      = daysUntilUTC(deadline);
+    const namespace = isExternalId(desc, '') ? 'external-id' : 'entra-id';
+
+    results.push({
+      id:            makeId(`graph:${title}`),
+      title,
+      description:   desc.slice(0, 600),
+      link:          'https://developer.microsoft.com/en-us/graph/changelog/',
+      pubDate:       pub,
+      category,
+      status,
+      impact:        'high',
+      deadline:      deadline ? deadline.toISOString().split('T')[0] : null,
+      daysRemaining: days,
+      source:        'graph-changelog',
+      namespace,
+      articleUrl:    null,
+      announcedDate,
+    });
+  }
+  return results;
+}
+
 // ── BUILD FULL DATASET ─────────────────────────────────────────────────────
 async function buildTrackerData(prevItems) {
   const allItems = [];
@@ -773,6 +866,19 @@ async function buildTrackerData(prevItems) {
     console.log(`external-id-commits: ${items.length} items`);
   } catch (err) { errors.push(`external-id-commits: ${err.message}`); console.error(err.message); }
 
+  // Source 6: Microsoft Graph changelog -- Entra API resource/endpoint deprecations
+  // (e.g. PIM iteration 2 retirement). Heavily filtered; see parseGraphChangelog.
+  let countGC = 0;
+  try {
+    const xml   = await fetchText(GRAPH_CHANGELOG_URL);
+    const rawItems = (xml.match(/<item>/gi) || []).length;
+    const items = parseGraphChangelog(xml);
+    allItems.push(...items);
+    countGC = items.length;
+    if (rawItems === 0) warnings.push('graph-changelog: no <item> entries found - feed format may have changed');
+    console.log(`graph-changelog: ${items.length} items (${rawItems} raw feed items)`);
+  } catch (err) { errors.push(`graph-changelog: ${err.message}`); console.error(err.message); }
+
   // Sort: expired_recent (still actionable) -> expired -> red -> yellow ->
   // green, then days asc, then announcedDate desc (newest first) as tiebreak
   // when status+days are equal. expired_recent ranks top because a deadline
@@ -840,6 +946,7 @@ async function buildTrackerData(prevItems) {
       'external-id-docs':    countEI,
       'b2c-docs':            countB2C,
       'external-id-commits': countEIC,
+      'graph-changelog':     countGC,
     },
     errors:         errors.length   ? errors   : undefined,
     warnings:       warnings.length ? warnings : undefined,

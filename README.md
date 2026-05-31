@@ -120,8 +120,9 @@ All sources are Microsoft-official (MicrosoftDocs GitHub repos + learn.microsoft
 | 3 | `entra-docs: external-id/whats-new-docs.md` | Markdown | External ID docs changelog (`- [Title](url)` bullets) |
 | 4 | `azure-docs: active-directory-b2c/whats-new-docs.md` | Markdown | B2C docs changelog (B2C is end-of-sale; winding down) |
 | 5 | `entra-docs: commits — external-id/customers` | GitHub Commits API | External ID customer how-tos (direct repo watch, pre-changelog) — catches passkey/FIDO2 guides before MS adds them to the curated index |
+| 6 | `developer.microsoft.com: Graph changelog` | RSS | Microsoft Graph API resource/endpoint **deprecations** (e.g. the PIM iteration 2 API retirement). The feed is a 2500+ item firehose, so it is filtered to Entra-relevant resource/API-level deprecations only (headline-sentence match + recency/deadline gate) — typically 1–3 high-signal items. |
 
-Changelog parsers track raw-bullet counts; if a source matches zero bullets the API response includes a `warnings[]` entry so upstream format drift surfaces instead of failing silently.
+Changelog parsers track raw-entry counts; if a source matches zero entries the API response includes a `warnings[]` entry so upstream format drift surfaces instead of failing silently.
 
 ---
 
