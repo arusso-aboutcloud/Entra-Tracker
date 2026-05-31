@@ -1615,7 +1615,11 @@ function getFiltered(){
     if(af === 'external-id' && i.namespace !== 'external-id') return false;
     if(af === 'radar' && !radarIds.has(i.id)) return false;
     if(af !== 'all' && af !== 'expired' && af !== 'tenant' && af !== 'external-id' && af !== 'radar' && i.category !== af) return false;
-    if(as_ && as_ !== 'tenant' && as_ !== 'external-id' && i.status !== as_) return false;
+    // When stat card filter is 'expired', match both expired tiers.
+    const statusMatch = as_ === 'expired'
+      ? (i.status === 'expired' || i.status === 'expired_recent')
+      : i.status === as_;
+    if(as_ && as_ !== 'tenant' && as_ !== 'external-id' && !statusMatch) return false;
     if(sq && !i.title.toLowerCase().includes(sq) && !(i.description||'').toLowerCase().includes(sq)) return false;
     return true;
   });
