@@ -1521,7 +1521,7 @@ function resetProfile() {
   applyProfileToUI();
   if(af === 'tenant') {
     af = 'all';
-    document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
+    document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
   }
   updateStats(all);
   render();
@@ -1721,7 +1721,7 @@ function updateUrl(){
 
 function applyStateFromUrl(){
   const params = new URLSearchParams(location.search);
-  const knownFilters = Array.from(document.querySelectorAll('.fbtn')).map(b => b.dataset.f);
+  const knownFilters = Array.from(document.querySelectorAll('.fbtn[data-f]')).map(b => b.dataset.f);
 
   const f = params.get('filter');
   if(f && knownFilters.includes(f)) af = f;
@@ -1735,7 +1735,7 @@ function applyStateFromUrl(){
   if(params.get('expired') === '1') hideExpired = false;
   document.getElementById('hide-expired').checked = hideExpired;
 
-  document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === af));
+  document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === af));
   document.querySelectorAll('.stat-card').forEach(c => c.classList.toggle('active', c.dataset.sf === as_ || c.dataset.sf === af));
 }
 
@@ -1785,9 +1785,9 @@ function updateStats(items){
 }
 
 // Filter buttons
-document.querySelectorAll('.fbtn').forEach(b => {
+document.querySelectorAll('.fbtn[data-f]').forEach(b => {
   b.addEventListener('click', () => {
-    document.querySelectorAll('.fbtn').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.fbtn[data-f]').forEach(x => x.classList.remove('active'));
     b.classList.add('active');
     af   = b.dataset.f;
     as_  = null;
@@ -1803,11 +1803,11 @@ document.querySelectorAll('.stat-card').forEach(c => {
     if(sf === 'tenant') {
       if(af === 'tenant') {
         af = 'all';
-        document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
+        document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
         c.classList.remove('active');
       } else {
         af = 'tenant';
-        document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'tenant'));
+        document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'tenant'));
         document.querySelectorAll('.stat-card').forEach(x => x.classList.remove('active'));
         c.classList.add('active');
         as_ = null;
@@ -1816,11 +1816,11 @@ document.querySelectorAll('.stat-card').forEach(c => {
     } else if(sf === 'external-id') {
       if(af === 'external-id') {
         af = 'all';
-        document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
+        document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
         c.classList.remove('active');
       } else {
         af = 'external-id';
-        document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'external-id'));
+        document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'external-id'));
         document.querySelectorAll('.stat-card').forEach(x => x.classList.remove('active'));
         c.classList.add('active');
         as_ = null;
@@ -1837,7 +1837,7 @@ document.querySelectorAll('.stat-card').forEach(c => {
       }
       if(af === 'tenant' || af === 'external-id') {
         af = 'all';
-        document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
+        document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
       }
     }
     render();
@@ -1849,10 +1849,10 @@ const extCard = document.getElementById('stat-extid');
 if(extCard) extCard.addEventListener('click', () => {
   if(af === 'external-id') {
     af = 'all';
-    document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
+    document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
   } else {
     af = 'external-id';
-    document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === 'external-id'));
+    document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'external-id'));
     document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
     as_ = null;
     if(typeof umami !== 'undefined') umami.track('extid-filter-used');
