@@ -469,6 +469,7 @@ nav a.active { color: var(--accent); font-weight: 600; }
 
 .fbtn:hover { color: var(--text); border-color: var(--accent); }
 .fbtn.active { background: var(--accent); border-color: var(--accent); color: #0d1117; font-weight: 700; }
+.fbtn.copy-link-btn.copied { color: var(--grn); border-color: var(--grn-bdr); }
 
 .toggle-wrap {
   display: flex;
@@ -1349,6 +1350,7 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
     <div class="search-wrap">
       <input type="text" id="search" class="search-input" placeholder="Search changes..." autocomplete="off">
     </div>
+    <button class="fbtn copy-link-btn" id="copyLinkBtn" type="button" title="Copy a link to this exact filtered view">&#128279; Copy link</button>
   </div>
 
   <!-- Count -->
@@ -1700,6 +1702,41 @@ function render(){
   // Sync External ID card active state
   const extCard = document.getElementById('stat-extid');
   if(extCard) extCard.classList.toggle('active', af === 'external-id');
+
+  updateUrl();
+}
+
+// ── Shareable filter links — mirror filter/status/search into the URL so
+// the address bar is always a link to the current view (e.g. one team can
+// send another a link straight to the External ID filter). ────────────────
+function updateUrl(){
+  const params = new URLSearchParams();
+  if(af !== 'all')   params.set('filter', af);
+  if(as_)            params.set('status', as_);
+  if(sq)             params.set('q', sq);
+  if(!hideExpired)   params.set('expired', '1');
+  const qs = params.toString();
+  history.replaceState(null, '', qs ? `${location.pathname}?${qs}` : location.pathname);
+}
+
+function applyStateFromUrl(){
+  const params = new URLSearchParams(location.search);
+  const knownFilters = Array.from(document.querySelectorAll('.fbtn')).map(b => b.dataset.f);
+
+  const f = params.get('filter');
+  if(f && knownFilters.includes(f)) af = f;
+
+  const s = params.get('status');
+  if(s && ['red','yellow','green','expired'].includes(s)) as_ = s;
+
+  const q = params.get('q');
+  if(q){ sq = q.toLowerCase().trim(); document.getElementById('search').value = q; }
+
+  if(params.get('expired') === '1') hideExpired = false;
+  document.getElementById('hide-expired').checked = hideExpired;
+
+  document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === af));
+  document.querySelectorAll('.stat-card').forEach(c => c.classList.toggle('active', c.dataset.sf === as_ || c.dataset.sf === af));
 }
 
 function updateStats(items){
@@ -1829,6 +1866,21 @@ document.getElementById('search').addEventListener('input', e => {
   render();
 });
 
+// Copy link — shares the current filter/search/status as a URL
+document.getElementById('copyLinkBtn').addEventListener('click', async e => {
+  const btn = e.currentTarget;
+  try {
+    await navigator.clipboard.writeText(location.href);
+    const label = btn.innerHTML;
+    btn.classList.add('copied');
+    btn.textContent = '✓ Link copied';
+    if(typeof umami !== 'undefined') umami.track('copy-filtered-link', { filter: af });
+    setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = label; }, 1200);
+  } catch(err) {
+    console.error('copy failed:', err.message);
+  }
+});
+
 // Hide expired toggle
 document.getElementById('hide-expired').addEventListener('change', e => {
   hideExpired = e.target.checked;
@@ -1934,6 +1986,7 @@ async function load(){
 
     loadRadar();
     loadProfile();
+    applyStateFromUrl();
     updateStats(all);
     render();
 
