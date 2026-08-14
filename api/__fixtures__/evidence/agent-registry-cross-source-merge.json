@@ -1,0 +1,24 @@
+{
+  "_note": "Item-level fixture (like Phase 0.1's dedupe fixtures), not raw-payload -- exercises mergeCrossSource()'s tier-ranking ARITHMETIC (1c), not parser text-extraction fidelity (which is what the work order's 'must be real prose' requirement protects for extractDeadline). Both items' description/evidence.quote are real Microsoft text about the same real change (the Agent Registry -> Agent 365 consolidation); see source notes below. The title is held identical between the two items so the merge match itself (exact-title path, already covered by Phase 0.1's tests) isn't what's under test here -- only which item WINS the merge is.",
+  "_designNote": "Deliberately constructed so the winner FLIPS between the old Phase-0.1 fixed CROSS_SOURCE_RANK table and the new tier-based ranking -- 1c's whole point ('replace the CROSS_SOURCE_RANK table ... with tier-based ranking'). Under the OLD table, entra-whatsnew-md (rank 0) always beats graph-changelog (rank 1) regardless of content. To demonstrate a flip, the whats-new.md side here has its real **Type:** field omitted (a real entry lacking that field was not found in the 2026-08-14 fetch -- every H3 in that snapshot had one -- so this exercises the parser's own documented tier-B fallback path with real body text otherwise untouched), landing it at tier B. The graph-changelog side is the real Agent Registry deprecation-notice text, given tier A (graph-changelog basis) for this test. Tier A now outranks tier B, so graph-changelog wins despite losing the old fixed-table comparison.",
+  "whatsnewSource": "https://raw.githubusercontent.com/MicrosoftDocs/entra-docs/main/docs/fundamentals/whats-new.md, March 2026 section, real body text, Type: field omitted for this test (see _designNote)",
+  "graphSource": "https://developer.microsoft.com/en-us/graph/changelog/rss, Agent Registry deprecation-notice item, fetched 2026-08-14",
+  "whatsnewItemNoTypeField": {
+    "title": "Plan for change – Agent Registry consolidation into Microsoft Agent 365",
+    "description": "The Agent registry and Agent collections blades in the Entra admin center will be retired on May 1, 2026. No action is required by administrators.",
+    "link": "https://learn.microsoft.com/en-us/entra/fundamentals/whats-new",
+    "category": "breaking",
+    "source": "entra-whatsnew-md",
+    "announcedDate": "2026-03-01",
+    "evidence": { "tier": "B", "basis": "keyword-heuristic", "quote": "The Agent registry and Agent collections blades in the Entra admin center will be retired on May 1, 2026.", "sourceUrl": "https://learn.microsoft.com/en-us/entra/fundamentals/whats-new" }
+  },
+  "graphChangelogItem": {
+    "title": "Plan for change – Agent Registry consolidation into Microsoft Agent 365",
+    "description": "Added a deprecation notice to the agentRegistry resource and related APIs indicating that these Agent Registry APIs will be replaced by Agent 365-based APIs starting May 1, 2026.",
+    "link": "https://developer.microsoft.com/en-us/graph/changelog/",
+    "category": "retirement",
+    "source": "graph-changelog",
+    "announcedDate": "2026-03-01",
+    "evidence": { "tier": "A", "basis": "graph-changelog", "quote": "Added a deprecation notice to the agentRegistry resource and related APIs indicating that these Agent Registry APIs will be replaced by Agent 365-based APIs starting May 1, 2026.", "sourceUrl": "https://developer.microsoft.com/en-us/graph/changelog/" }
+  }
+}

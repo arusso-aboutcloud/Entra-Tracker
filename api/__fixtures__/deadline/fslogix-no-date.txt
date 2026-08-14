@@ -1,0 +1,1 @@
+Action required: Windows Kerberos hardening (RC4) may affect FSLogix profiles on SMB storage

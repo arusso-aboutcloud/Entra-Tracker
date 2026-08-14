@@ -1,0 +1,17 @@
+{
+  "_source": "MicrosoftDocs/entra-docs commit ac6b47d646ca60619931385724abbdf2ccd5d772, 2026-06-22T14:18:34Z, \"Update jailbreak detection heading to include root detection\" -- https://github.com/MicrosoftDocs/entra-docs/commit/ac6b47d646ca60619931385724abbdf2ccd5d772",
+  "_note": "Real Microsoft-authored heading rename, one line changed in the diff. Body/type/service-category unchanged by this commit (confirmed by the patch, which touches only the heading line) -- both snapshots below use the real Feb-2026 body text as captured live on 2026-08-14.",
+  "before": {
+    "title": "Upcoming Changes - Jailbreak Detection in Authenticator App",
+    "description": "Starting February 2026, Microsoft Authenticator will introduce jailbreak/root detection for Microsoft Entra credentials in the Authenticator app. The rollout progresses from warning mode to blocking mode. Users must move to compliant devices to continue using Microsoft Entra accounts in Authenticator.",
+    "announcedDate": "2026-02-01",
+    "source": "entra-whatsnew-md"
+  },
+  "after": {
+    "title": "Upcoming Changes – Jailbreak/root Detection in Authenticator App",
+    "description": "Starting February 2026, Microsoft Authenticator will introduce jailbreak/root detection for Microsoft Entra credentials in the Authenticator app. The rollout progresses from warning mode to blocking mode. Users must move to compliant devices to continue using Microsoft Entra accounts in Authenticator.",
+    "announcedDate": "2026-02-01",
+    "source": "entra-whatsnew-md"
+  },
+  "titleSimilarity": 0.75
+}

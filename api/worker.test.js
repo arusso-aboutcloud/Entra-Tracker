@@ -13,14 +13,26 @@ import {
   mergeCrossSource,
   twoStageDedupe,
   extractDeadline,
+  classifyByKeyword,
+  buildEvidence,
+  evidenceTierRank,
+  makeId,
+  fnv1a,
+  applyDiff,
 } from './worker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-function loadFixture(name) {
-  const p = path.join(__dirname, '__fixtures__', 'dedupe', name);
+function loadFixture(...segments) {
+  const p = path.join(__dirname, '__fixtures__', ...segments);
   return JSON.parse(readFileSync(p, 'utf8'));
 }
+function loadText(...segments) {
+  const p = path.join(__dirname, '__fixtures__', ...segments);
+  return readFileSync(p, 'utf8').trim();
+}
+
+// ── DEDUPE (Phase 0.1) ───────────────────────────────────────────────────────
 
 describe('normalizeTitleForDedup', () => {
   test('strips subtype prefix, punctuation, and collapses whitespace', () => {
@@ -55,24 +67,23 @@ describe('titleSimilarity / monthDiff', () => {
 
 describe('dedupeIntraSource (stage 1)', () => {
   test('collapses an exact-normalised-title repeat within the same source', () => {
-    const items = loadFixture('intra-source-duplicate.json');
+    const items = loadFixture('dedupe', 'intra-source-duplicate.json');
     const { items: kept, dedupeDropped } = dedupeIntraSource(items);
     assert.equal(kept.length, 1);
     assert.equal(dedupeDropped, 1);
   });
 
   test('does not touch distinct titles', () => {
-    const items = loadFixture('cross-source-exact-merge.json'); // 2 different sources, same title
+    const items = loadFixture('dedupe', 'cross-source-exact-merge.json'); // 2 different sources, same title
     const { items: kept, dedupeDropped } = dedupeIntraSource(items);
-    // different sources -> stage 1 (intra-source only) must not collapse them
     assert.equal(kept.length, 2);
     assert.equal(dedupeDropped, 0);
   });
 });
 
 describe('mergeCrossSource (stage 2)', () => {
-  test('merges an exact cross-source title match, higher-rank source wins', () => {
-    const items = loadFixture('cross-source-exact-merge.json');
+  test('merges an exact cross-source title match, higher-rank source wins (no evidence on fixture -> falls back to source order)', () => {
+    const items = loadFixture('dedupe', 'cross-source-exact-merge.json');
     const { items: merged, crossSourceMerged } = mergeCrossSource(items);
     assert.equal(merged.length, 1);
     assert.equal(crossSourceMerged, 1);
@@ -83,70 +94,317 @@ describe('mergeCrossSource (stage 2)', () => {
   });
 
   test('merges a near-duplicate title within the ±1 month window, and backfills a null deadline from the loser', () => {
-    const items = loadFixture('cross-source-near-duplicate-merge.json');
+    const items = loadFixture('dedupe', 'cross-source-near-duplicate-merge.json');
     const { items: merged, crossSourceMerged } = mergeCrossSource(items);
     assert.equal(merged.length, 1);
     assert.equal(crossSourceMerged, 1);
     const survivor = merged[0];
-    assert.equal(survivor.source, 'entra-whatsnew-md'); // rank 0 beats graph-changelog (rank 1)
-    // whatsnew-md's own deadline was null; graph-changelog had one -> backfilled
+    assert.equal(survivor.source, 'entra-whatsnew-md');
     assert.equal(survivor.deadline, '2026-09-30');
     assert.equal(survivor.daysRemaining, 47);
   });
 
   test('does NOT merge a near-duplicate title when announcedDate months are more than 1 apart', () => {
-    const items = loadFixture('cross-source-month-window-reject.json');
+    const items = loadFixture('dedupe', 'cross-source-month-window-reject.json');
     const { items: merged, crossSourceMerged } = mergeCrossSource(items);
     assert.equal(merged.length, 2);
     assert.equal(crossSourceMerged, 0);
   });
 
-  test('external-id-commits items are never merged into or absorbed by another source (carve-out)', () => {
-    const items = loadFixture('eic-carveout.json'); // identical normalised titles, one is external-id-commits
+  test('external-id-commits items are never merged into or absorbed by another source (carve-out, still holds after tier-ranking swap)', () => {
+    const items = loadFixture('dedupe', 'eic-carveout.json');
     const { items: merged, crossSourceMerged } = mergeCrossSource(items);
-    assert.equal(merged.length, 2, 'external-id-commits item must survive as its own item');
+    assert.equal(merged.length, 2);
     assert.equal(crossSourceMerged, 0);
     assert.ok(merged.some(i => i.source === 'external-id-commits'));
     assert.ok(merged.some(i => i.source === 'entra-whatsnew-md'));
+  });
+
+  test('(1c) evidence tier wins over the fixed CROSS_SOURCE_RANK table when they disagree', () => {
+    // Real-content fixture, see api/__fixtures__/evidence/README for provenance
+    // and why this pairing was chosen to force a flip.
+    const fx = loadFixture('evidence', 'agent-registry-cross-source-merge.json');
+    const items = [fx.whatsnewItemNoTypeField, fx.graphChangelogItem];
+    // Sanity: titles must actually match for this to be a merge-ranking test.
+    assert.equal(
+      normalizeTitleForDedup(items[0].title),
+      normalizeTitleForDedup(items[1].title)
+    );
+    // Old fixed table says entra-whatsnew-md (rank 0) beats graph-changelog (rank 1).
+    assert.ok(sourceRank('entra-whatsnew-md') < sourceRank('graph-changelog'));
+    const { items: merged, crossSourceMerged } = mergeCrossSource(items);
+    assert.equal(merged.length, 1);
+    assert.equal(crossSourceMerged, 1);
+    // New tier-based ranking: tier A (graph-changelog here) beats tier B
+    // (entra-whatsnew-md here) -- the winner FLIPS from what the old table alone would pick.
+    assert.equal(merged[0].source, 'graph-changelog');
+    assert.equal(merged[0].evidence.tier, 'A');
   });
 });
 
 describe('twoStageDedupe (end to end)', () => {
   test('runs stage 1 then stage 2 and reports both counters', () => {
     const items = [
-      ...loadFixture('intra-source-duplicate.json'),
-      ...loadFixture('cross-source-exact-merge.json'),
+      ...loadFixture('dedupe', 'intra-source-duplicate.json'),
+      ...loadFixture('dedupe', 'cross-source-exact-merge.json'),
     ];
     const { items: result, dedupeDropped, crossSourceMerged } = twoStageDedupe(items);
-    // 2 intra-source dupes -> 1, plus 2 cross-source exact dupes -> 1 = 2 survivors
     assert.equal(result.length, 2);
     assert.equal(dedupeDropped, 1);
     assert.equal(crossSourceMerged, 1);
   });
 });
 
-describe('sourceRank', () => {
-  test('orders sources as specified: whatsnew-md > graph-changelog > docs changelogs > fslogix > commits', () => {
+describe('sourceRank / evidenceTierRank', () => {
+  test('sourceRank orders sources as specified (tie-break table, Phase 0.1)', () => {
     assert.ok(sourceRank('entra-whatsnew-md') < sourceRank('graph-changelog'));
     assert.ok(sourceRank('graph-changelog') < sourceRank('external-id-docs'));
     assert.equal(sourceRank('external-id-docs'), sourceRank('b2c-docs'));
     assert.ok(sourceRank('b2c-docs') < sourceRank('fslogix-docs'));
     assert.ok(sourceRank('fslogix-docs') < sourceRank('external-id-commits'));
   });
+
+  test('evidenceTierRank orders A > B > C, unknown tiers rank last', () => {
+    assert.ok(evidenceTierRank('A') < evidenceTierRank('B'));
+    assert.ok(evidenceTierRank('B') < evidenceTierRank('C'));
+    assert.ok(evidenceTierRank('C') < evidenceTierRank(undefined));
+  });
 });
 
-describe('extractDeadline (regression guards, pre-existing behaviour)', () => {
-  test('an ISO date elsewhere in the body does not win over category-gated retirement logic without expiry language', () => {
-    // Documents current (pre-Phase-1) behaviour: retirement/breaking bypass the
-    // proximity check entirely, so the FIRST matching format (ISO here) is
-    // returned. This is the exact defect Phase 1 replaces with a scorer -- this
-    // test exists so the Phase 1 diff has a clear "before" to compare against.
-    const text = 'Published 2026-01-15. Starting March 2026 rollout begins; fully retired by November 2026.';
-    const d = extractDeadline(text, 'retirement');
-    assert.equal(d.toISOString().split('T')[0], '2026-01-15');
+// ── DEADLINE SCORING (1a) -- all fixtures are real captured Microsoft text,
+// see api/__fixtures__/deadline/README.md for exact source + capture date. ──
+
+describe('extractDeadline (candidate scorer, real fixtures)', () => {
+  test('real: Agent Registry retirement -- day-precision date, cessation verb same sentence -> stated', () => {
+    const text = loadText('deadline', 'agent-registry-retirement.txt');
+    const r = extractDeadline(text, 'breaking', '2026-03-01');
+    assert.ok(r.deadline, 'expected a deadline to be found');
+    assert.equal(r.deadline.toISOString().split('T')[0], '2026-05-01');
+    assert.equal(r.deadlineConfidence, 'stated');
+    assert.equal(r.deadlinePrecision, 'day');
+    assert.match(r.deadlineEvidence, /retired on May 1, 2026/i);
   });
 
-  test('retirement with no date anywhere returns null', () => {
-    assert.equal(extractDeadline('This feature is being retired with no stated date.', 'retirement'), null);
+  test('real: PIM iteration 2 Graph API deprecation -- day-precision, stated', () => {
+    const text = loadText('deadline', 'pim-iteration2-graph-changelog.txt');
+    const r = extractDeadline(text, 'retirement', '2025-11-18');
+    assert.ok(r.deadline);
+    assert.equal(r.deadline.toISOString().split('T')[0], '2026-10-28');
+    assert.equal(r.deadlineConfidence, 'stated');
+    assert.equal(r.deadlinePrecision, 'day');
+  });
+
+  test('real: SAP SuccessFactors basic-auth deadline -- new_feature category still surfaces a stated month-precision deadline because "must upgrade...before" genuinely supports it', () => {
+    const text = loadText('deadline', 'sap-successfactors-deadline.txt');
+    const r = extractDeadline(text, 'new_feature', '2026-05-01');
+    assert.ok(r.deadline, 'a non-retirement/breaking category can still surface a deadline when confidence is stated/derived');
+    // End-of-month convention: "November 2026" -> 2026-11-30
+    assert.equal(r.deadline.toISOString().split('T')[0], '2026-11-30');
+    assert.equal(r.deadlineConfidence, 'stated'); // "must upgrade" is literally in DEADLINE_LANGUAGE
+    assert.equal(r.deadlinePrecision, 'month');
+  });
+
+  test('real: FSLogix "no date at all" callout -> null deadline', () => {
+    const text = loadText('deadline', 'fslogix-no-date.txt');
+    const r = extractDeadline(text, 'breaking', null);
+    assert.equal(r.deadline, null);
+    assert.equal(r.deadlineConfidence, null);
+  });
+
+  test('real: FSLogix rollout-language date, non-retirement category -> suppressed entirely (inferred not enough outside retirement/breaking)', () => {
+    const text = loadText('deadline', 'fslogix-rollout-language.txt');
+    // This is how parseFSLogixDocs actually classifies this exact real text
+    // in isolation (no "action required"/"must"/"breaking" substring here).
+    const category = /action required|breaking|will fail|must|before.*update/i.test(text) ? 'breaking' : 'preview';
+    assert.equal(category, 'preview');
+    const r = extractDeadline(text, category, null);
+    assert.equal(r.deadline, null, 'rollout-language date with no deadline language nearby should not surface as a deadline for a preview item');
+  });
+
+  test('real: same FSLogix rollout-language text, but breaking category -> weak candidate still surfaces, downgraded to inferred', () => {
+    // Demonstrates the honesty of the confidence field: with only one date
+    // candidate in the text and no deadline-language support, the scorer
+    // can't invent a better candidate -- but it correctly marks this one
+    // low-confidence rather than presenting it as certain. 1d suppresses
+    // the countdown for 'inferred' for exactly this reason.
+    const text = loadText('deadline', 'fslogix-rollout-language.txt');
+    const r = extractDeadline(text, 'breaking', null);
+    assert.ok(r.deadline);
+    assert.equal(r.deadlineConfidence, 'inferred');
+  });
+
+  test('real (composite, see fixture README): an incidental ISO page-footer date is the only candidate -- surfaced but downgraded to inferred, not silently treated as certain', () => {
+    const text = loadText('deadline', 'iso-date-not-deadline-composite.txt');
+    const r = extractDeadline(text, 'breaking', null);
+    // The old bug: this ISO date would have been accepted outright as a
+    // hard deadline for a 'breaking' category with zero language support.
+    // The new scorer still can't know it's page metadata (it's the only
+    // candidate in the text) but correctly flags it as weakly supported.
+    assert.ok(r.deadline);
+    assert.equal(r.deadlineConfidence, 'inferred');
+  });
+
+  test('synthetic (deterministic tie-break check, not prose): retirement/breaking break score ties toward the LATEST future date', () => {
+    // Two day-precision dates, both same-sentence with a cessation verb, both
+    // future, both equally far from rollout language (none present) -- an
+    // exact score tie is what this test needs, which real prose essentially
+    // never produces on demand. See README for why this one case is synthetic.
+    const text = 'This will be retired on 2026-09-01 or 2026-11-01, exact date to be confirmed.';
+    const r = extractDeadline(text, 'retirement', null);
+    assert.equal(r.deadline.toISOString().split('T')[0], '2026-11-01');
+  });
+
+  test('synthetic (regex-overlap mechanics): "15 March 2026" (DMY) is not double-counted as a separate "March 2026" (MY) candidate', () => {
+    const text = 'The feature will be retired on 15 March 2026.';
+    const r = extractDeadline(text, 'retirement', null);
+    assert.equal(r.deadlinePrecision, 'day'); // DMY wins, not the subsumed MY reading
+    assert.equal(r.deadline.toISOString().split('T')[0], '2026-03-15');
+  });
+
+  test('an ISO date elsewhere in the body no longer beats the real MDY/text deadline just by matching an earlier-precedence format', () => {
+    // Same illustrative example as the work order text -- kept as a direct
+    // before/after regression guard (the old single-format-match bug is
+    // exactly what this demonstrates fixed).
+    const text = 'Published 2026-01-15. Starting March 2026 rollout begins; fully retired by November 2026.';
+    const r = extractDeadline(text, 'retirement', null);
+    assert.equal(r.deadline.toISOString().split('T')[0], '2026-11-30');
+    assert.equal(r.deadlineConfidence, 'stated');
+  });
+
+  test('retirement with no date anywhere returns a fully-null result object (not a bare null)', () => {
+    const r = extractDeadline('This feature is being retired with no stated date.', 'retirement', null);
+    assert.deepEqual(r, { deadline: null, deadlineConfidence: null, deadlineEvidence: null, deadlinePrecision: null });
+  });
+});
+
+// ── ITEM IDENTITY (1b) ───────────────────────────────────────────────────────
+
+describe('makeId', () => {
+  test('same source+link+title -> same id; changing any one component changes it', () => {
+    const a = makeId('entra-whatsnew-md', 'https://x/whats-new', 'Some Title');
+    const b = makeId('entra-whatsnew-md', 'https://x/whats-new', 'Some Title');
+    assert.equal(a, b);
+    assert.notEqual(a, makeId('graph-changelog', 'https://x/whats-new', 'Some Title'));
+    assert.notEqual(a, makeId('entra-whatsnew-md', 'https://x/other', 'Some Title'));
+    assert.notEqual(a, makeId('entra-whatsnew-md', 'https://x/whats-new', 'Other Title'));
+  });
+
+  test('is stable across a trivial re-punctuation of the title (normalises before hashing)', () => {
+    const a = makeId('entra-whatsnew-md', 'https://x', 'Some -- Title!');
+    const b = makeId('entra-whatsnew-md', 'https://x', 'Some Title');
+    assert.equal(a, b);
+  });
+
+  test('is an 8-hex-char string (unchanged format)', () => {
+    assert.match(makeId('s', 'l', 't'), /^[0-9a-f]{8}$/);
+  });
+});
+
+describe('fnv1a', () => {
+  test('is deterministic', () => {
+    assert.equal(fnv1a('hello'), fnv1a('hello'));
+  });
+});
+
+describe('applyDiff (identity continuity across a rewording, and the id-formula transition)', () => {
+  test('real: exact id match carries firstSeen forward unchanged', () => {
+    const prevItem = { id: 'aaaa1111', title: 'Some Title', source: 'entra-whatsnew-md', announcedDate: '2026-03-01', firstSeen: '2026-01-01' };
+    const curItem  = { id: 'aaaa1111', title: 'Some Title', source: 'entra-whatsnew-md', announcedDate: '2026-03-01' };
+    applyDiff([curItem], [prevItem], false);
+    assert.equal(curItem.isNew, false);
+    assert.equal(curItem.firstSeen, '2026-01-01');
+    assert.equal(curItem.firstSeenEstimated, false);
+    assert.deepEqual(curItem.titleHistory, []);
+  });
+
+  test('real (MicrosoftDocs commit ac6b47d6): a genuine minor title rewording is caught by the similarity fallback, firstSeen carried forward, titleHistory records the prior title', () => {
+    const fx = loadFixture('identity', 'jailbreak-heading-rename.json');
+    assert.ok(titleSimilarity(fx.before.title, fx.after.title) >= 0.70, 'fixture must actually clear the threshold it is meant to validate');
+    const prevId = makeId(fx.before.source, 'https://learn.microsoft.com/en-us/entra/fundamentals/whats-new', fx.before.title);
+    const prevItem = { id: prevId, title: fx.before.title, source: fx.before.source, announcedDate: fx.before.announcedDate, firstSeen: '2026-02-05' };
+    const newId = makeId(fx.after.source, 'https://learn.microsoft.com/en-us/entra/fundamentals/whats-new', fx.after.title);
+    const curItem = { id: newId, title: fx.after.title, source: fx.after.source, announcedDate: fx.after.announcedDate };
+    assert.notEqual(prevId, newId, 'the rewording must actually change the id, or this test proves nothing');
+
+    applyDiff([curItem], [prevItem], false);
+    assert.equal(curItem.isNew, false, 'reworded item must not be treated as brand new');
+    assert.equal(curItem.firstSeen, '2026-02-05', 'firstSeen must carry forward from the pre-rewording item');
+    assert.deepEqual(curItem.titleHistory, [fx.before.title]);
+  });
+
+  test('real (Preview->GA pair, distinct lifecycle stages): similarity fallback correctly does NOT merge two genuinely different announcements', () => {
+    const fx = loadFixture('identity', 'preview-to-ga-distinct.json');
+    assert.ok(titleSimilarity(fx.preview.title, fx.ga.title) < 0.70, 'fixture must actually be below the threshold it is meant to validate');
+    const prevItem = { id: 'prev-preview-id', title: fx.preview.title, source: fx.preview.source, announcedDate: fx.preview.announcedDate, firstSeen: '2026-04-02' };
+    const curItem  = { id: 'new-ga-id', title: fx.ga.title, source: fx.ga.source, announcedDate: fx.ga.announcedDate };
+    applyDiff([curItem], [prevItem], false);
+    assert.equal(curItem.isNew, true, 'a real GA announcement must not be swallowed by a Preview announcement several weeks earlier');
+    assert.notEqual(curItem.firstSeen, '2026-04-02');
+  });
+
+  test('the makeId formula change (this phase) is a non-event for firstSeen continuity: every existing item has an unchanged title, so it trivially clears the similarity bar even though every id value changes', () => {
+    // Simulates the actual Phase 0.1 -> Phase 1 deploy transition: prevItems
+    // carry ids computed under the OLD ad hoc per-parser hash inputs; current
+    // items carry ids computed under the NEW source+link+title formula. Titles
+    // are identical, so this is the "one-time id value change" scenario
+    // described in makeId()'s comment and the PR description, not a routine
+    // rewording.
+    function oldMakeId(title) { return fnv1a(String(title || '')); } // old bare-title hash, reimplemented locally on purpose (not imported) to pin down exactly what changed
+    const title = 'General Availability - Some Real Feature';
+    const oldId = oldMakeId(title);
+    const newId = makeId('entra-whatsnew-md', 'https://learn.microsoft.com/en-us/entra/fundamentals/whats-new', title);
+    assert.notEqual(oldId, newId, 'the formula must actually differ, or this test proves nothing');
+
+    const prevItem = { id: oldId, title, source: 'entra-whatsnew-md', announcedDate: '2026-06-01', firstSeen: '2026-06-02' };
+    const curItem  = { id: newId, title, source: 'entra-whatsnew-md', announcedDate: '2026-06-01' };
+    applyDiff([curItem], [prevItem], false);
+    assert.equal(curItem.isNew, false, 'an unchanged item must not appear as new just because the id formula changed');
+    assert.equal(curItem.firstSeen, '2026-06-02');
+    assert.deepEqual(curItem.titleHistory, [], 'title is unchanged, so no titleHistory entry should be added even though similarity-fallback matching is what carried firstSeen');
+  });
+});
+
+describe('applyDiff (1e: cold-start firstSeen seeding)', () => {
+  test('cold start seeds firstSeen from announcedDate when it is in the past, and marks firstSeenEstimated', () => {
+    const curItem = { id: 'x1', title: 'T', source: 's', announcedDate: '2026-03-01' };
+    applyDiff([curItem], [], true);
+    assert.equal(curItem.firstSeen, '2026-03-01');
+    assert.equal(curItem.firstSeenEstimated, true);
+  });
+
+  test('cold start with no usable announcedDate falls back to today, not estimated', () => {
+    const curItem = { id: 'x2', title: 'T', source: 's', announcedDate: null };
+    const todayISO = new Date().toISOString().split('T')[0];
+    applyDiff([curItem], [], true);
+    assert.equal(curItem.firstSeen, todayISO);
+    assert.equal(curItem.firstSeenEstimated, false);
+  });
+
+  test('a normal (non-cold-start) build never sets firstSeenEstimated true, even for a genuinely brand-new item', () => {
+    const curItem = { id: 'x3', title: 'T', source: 's', announcedDate: '2026-03-01' };
+    applyDiff([curItem], [], false);
+    assert.equal(curItem.firstSeenEstimated, false);
+  });
+});
+
+// ── CLASSIFICATION PROVENANCE (1c) ──────────────────────────────────────────
+
+describe('buildEvidence / classifyByKeyword', () => {
+  test('buildEvidence caps quote length and defaults sourceUrl to null', () => {
+    const e = buildEvidence('B', 'doc-callout', 'x'.repeat(500), undefined);
+    assert.equal(e.quote.length, 240);
+    assert.equal(e.sourceUrl, null);
+  });
+
+  test('real: SAP SuccessFactors text keyword-classifies as retirement (body mentions "deprecate"), even though the live parser uses Type: New feature instead', () => {
+    // classifyByKeyword checks CLASSIFIERS.retirement first and the body
+    // text says "SAP's plan to deprecate basic authentication" -- so the
+    // keyword fallback alone would call this 'retirement'. The live parser
+    // never actually reaches this fallback for this entry because it has a
+    // real **Type:** field (New feature) and TYPE_TO_CATEGORY wins first;
+    // this test documents why classifyByKeyword's raw output can't be
+    // treated as authoritative for whats-new.md entries in isolation.
+    const text = loadText('deadline', 'sap-successfactors-deadline.txt');
+    assert.equal(classifyByKeyword('Public Preview - Workload identity-based authentication for SAP SuccessFactors provisioning integrations', text), 'retirement');
   });
 });

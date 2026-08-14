@@ -697,6 +697,24 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
 .badge.i-medium     { color:var(--yel); background:var(--yel-bg); border-color:var(--yel-bdr); }
 .badge.i-low        { color:var(--muted); background:var(--grey-bg); border-color:var(--bdr); }
 
+/* Evidence tier -- how strong Microsoft's own signal was for this item's
+   classification. See the Methodology section for the plain-language version. */
+.badge.tier-a { color:var(--accent); background:rgba(88,166,255,.12); border-color:rgba(88,166,255,.3); }
+.badge.tier-b { color:var(--muted);  background:var(--grey-bg);       border-color:var(--bdr); }
+.badge.tier-c { color:var(--dim);    background:var(--grey-bg);       border-color:var(--bdr-light); }
+
+/* Hedge shown instead of a countdown when deadlineConfidence is 'inferred' --
+   a date the tracker found but isn't confident enough about to count down to. */
+.cd-hedge {
+  font-family: var(--fm);
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: right;
+  line-height: 1.4;
+  max-width: 8rem;
+}
+.cd-hedge .cd-hedge-date { color: var(--text); font-weight: 500; }
+
 .lnk {
   font-family: var(--fm);
   font-size: 0.72rem;
@@ -1328,6 +1346,56 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
     </div>
   </details>
 
+  <!-- Methodology -->
+  <details class="legend" id="methodology">
+    <summary class="legend-toggle">
+      📊 &nbsp;Methodology — how confident is this, really?
+      <span class="legend-toggle-icon">▼</span>
+    </summary>
+    <div class="legend-body">
+      <div class="legend-grid">
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <span class="badge tier-a">Tier A</span>
+          </div>
+          <div class="legend-desc">Microsoft announced this as a change with structured metadata behind it — a labelled "Type" field on the What's New page, or an official Graph API deprecation entry. The strongest signal available: this is Microsoft formally saying "this is changing."</div>
+        </div>
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <span class="badge tier-b">Tier B</span>
+          </div>
+          <div class="legend-desc">Official Microsoft documentation content says this is happening — a docs changelog entry, a release-notes callout, or a What's New entry without the structured metadata Tier A relies on. Still Microsoft's own words, just without the formal label.</div>
+        </div>
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <span class="badge tier-c">Tier C</span>
+          </div>
+          <div class="legend-desc">A signal that something is coming, not an announcement of it — specifically, a new how-to article appearing in Microsoft's documentation repository before it's been added to the curated changelog. Useful as an early heads-up; treat it as less certain than Tier A or B until it's confirmed elsewhere.</div>
+        </div>
+
+        <hr class="legend-divider">
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <span class="legend-badge-name" style="color:var(--text)">Deadline confidence</span>
+          </div>
+          <div class="legend-desc">Every deadline the tracker shows a countdown for was picked out of Microsoft's own text, not just the first date-shaped string it found. <strong style="color:var(--text)">Stated</strong> means the cutoff was spelled out in the same sentence as words like "retired," "deprecated," or "must migrate" — the strongest kind of date. <strong style="color:var(--text)">Derived</strong> means cutoff language was nearby but not in the same sentence. Both get a normal countdown.</div>
+        </div>
+
+        <div class="legend-item">
+          <div class="legend-item-header">
+            <span class="legend-badge-name" style="color:var(--muted)">Unconfirmed dates</span>
+          </div>
+          <div class="legend-desc">Sometimes the only date in an entry doesn't have clear cutoff language near it — it might be a rollout date, a publish date, or a genuine deadline Microsoft just didn't phrase clearly. Rather than guess with a countdown, the tracker shows the date plainly, labelled "possible date… unconfirmed." Treat it as a lead to verify against the linked Microsoft article, not a date to plan around.</div>
+        </div>
+
+      </div>
+    </div>
+  </details>
+
   <!-- Controls -->
   <div class="controls">
     <button class="fbtn active" data-f="all">All</button>
@@ -1592,6 +1660,12 @@ function fmtAnnounced(iso) {
 
 function cdHTML(item){
   if(item.deadline) {
+    // A weakly-supported date (the scorer's best guess, not a clearly-stated
+    // cutoff) never gets a countdown -- a countdown implies certainty this
+    // date doesn't have. Show the date itself with an explicit hedge instead.
+    if (item.deadlineConfidence === 'inferred') {
+      return `<div class="cd-hedge">possible date<br><span class="cd-hedge-date">${item.deadline}</span><br>unconfirmed</div>`;
+    }
     if(item.status==='expired' || item.status==='expired_recent'){
       const ago = (item.daysRemaining != null) ? Math.abs(item.daysRemaining) : null;
       const agoTxt = ago != null ? `${ago} day${ago!==1?'s':''} ago` : 'expired';
@@ -1621,6 +1695,13 @@ function entryHTML(item){
   const tenantBadge = affected ? `<span class="badge i-tenant">&#127919; Affects your tenant</span>` : '';
   const extIdBadge  = item.namespace === 'external-id' ? `<span class="badge i-external-id">&#x1F7E3; External ID</span>` : '';
   const newBadge    = isRecentlyNew(item, coldStart) ? `<span class="badge i-new-recent">&#10024; Just added</span>` : '';
+  // Evidence tier: how strong Microsoft's own signal was. Absent on items
+  // loaded from a pre-Phase-1 cache snapshot -- omit the badge rather than
+  // show a misleading "unknown tier".
+  const tier = item.evidence && item.evidence.tier;
+  const tierBadge = tier
+    ? `<span class="badge tier-${tier.toLowerCase()}" title="Evidence tier ${tier} -- see Methodology">Tier ${tier}</span>`
+    : '';
   const starred  = radarIds.has(item.id);
   const radarBtn = `<button class="radar-btn${starred?' on':''}" onclick="toggleRadar('${item.id}')" title="${starred?'Remove from On Radar':'Add to On Radar'}" aria-label="${starred?'Remove from radar':'Add to radar'}">${starred?'&#9733;':'&#9734;'}</button>`;
 
@@ -1633,6 +1714,7 @@ function entryHTML(item){
         ${newBadge}
         <span class="badge c-${item.category}">${catLabel(item.category)}</span>
         <span class="badge i-${item.impact}">${impLabel(item.impact)}</span>
+        ${tierBadge}
         ${extIdBadge}
         ${tenantBadge}
         ${ms}${ar}

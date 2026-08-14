@@ -1,0 +1,15 @@
+{
+  "_source": "Two real, distinct entries in the live whats-new.md as fetched 2026-08-14 -- https://raw.githubusercontent.com/MicrosoftDocs/entra-docs/main/docs/fundamentals/whats-new.md (April 2026 section: 'Public Preview - Account Discovery'; May 2026 section: 'General Availability - Account Discovery')",
+  "_note": "Negative case: same feature, different lifecycle-stage announcements, several weeks apart. These are two genuinely separate newsworthy events, not a rewording of one -- the identity similarity fallback must NOT merge them (titleSimilarity ~0.33, well under the 0.70 threshold), otherwise a real GA announcement would be swallowed and never show as new.",
+  "preview": {
+    "title": "Public Preview - Account Discovery",
+    "announcedDate": "2026-04-01",
+    "source": "entra-whatsnew-md"
+  },
+  "ga": {
+    "title": "General Availability - Account Discovery",
+    "announcedDate": "2026-05-01",
+    "source": "entra-whatsnew-md"
+  },
+  "titleSimilarity": 0.333
+}
