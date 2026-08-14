@@ -76,6 +76,10 @@ on every push to `main` that touches `api/**`. Requires two repo secrets set in
 GitHub Settings > Secrets and variables > Actions:
 `CLOUDFLARE_API_TOKEN` (Workers Scripts:Edit permission) and `CLOUDFLARE_ACCOUNT_ID`.
 
+**Worker secret:** `REFRESH_TOKEN` (optional but recommended) — set via
+`wrangler secret put REFRESH_TOKEN --config api/wrangler.toml` or the Cloudflare
+dashboard. Gates the `?refresh=1` bypass; without it, `refresh=1` is ignored.
+
 ### Pages
 
 | Property | Value |
@@ -103,9 +107,13 @@ Returns full article catalog with metadata.
 | `format` | `csv` | Return dataset as CSV instead of JSON. Reuses cached data — does not trigger a re-fetch. Columns: `title,category,impact,status,announcedDate,firstSeen,deadline,daysRemaining,namespace,link`. Response includes `Content-Disposition: attachment; filename="entra-tracker.csv"`. |
 | `format` | `rss` | Return top 50 items as RSS 2.0 feed, newest-first by `firstSeen`. Reuses cached data. `Content-Type: application/rss+xml`. Respects `namespace` filter. |
 | `namespace` | `external-id` | Filter items to External ID namespace only. Works with JSON, CSV, and RSS formats. |
-| `refresh` | `1` | Bypass KV cache and force a fresh fetch from all sources. |
+| `refresh` | `1` | Bypass KV cache and force a fresh fetch from all sources. **Requires** an `X-Refresh-Token` request header matching the `REFRESH_TOKEN` secret; if that secret isn't configured, `refresh=1` is silently ignored and the cached response is served instead. |
 
 **`announcedDate` field:** Each item now includes `announcedDate` (ISO `yyyy-mm-dd` or `null`). Populated from the `## Month YYYY` section header in whats-new.md / docs changelogs, the commit date in the commits source, or the RSS pubDate. This is the publication/announcement date only — it never becomes a deadline.
+
+**`dedupeDropped` field:** The envelope includes a `dedupeDropped` count — how many items were collapsed as duplicates (same source + normalised title) during a build. A nonzero value is expected in normal operation; it exists so silent over-dedup is visible instead of hidden.
+
+**Cache behavior:** The HTTP `Cache-Control: max-age` and the underlying KV entry's TTL are decoupled. Responses are cached for 4 hours (matching the cron refresh interval), but the KV entry itself persists for 30 days as a backstop — so a single missed or failed cron run no longer expires the cache and forces a cold start (which would reset every item's `firstSeen` and republish the whole feed as "new").
 
 ---
 

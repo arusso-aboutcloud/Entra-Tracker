@@ -13,6 +13,11 @@
 - [x] Newest-announced sort -- client-side sort option; server tiebreak also uses `announcedDate`.
 - [x] CSV export -- `GET /entra-tracker?format=csv` returns all items as downloadable CSV.
 - [x] On Radar client-side watchlist -- star items, persisted in `localStorage`, filterable.
+- [x] Reliability fixes (Phase 0) -- KV `expirationTtl` decoupled from HTTP `max-age` so a
+  missed cron no longer forces a cold start; `Vary: Origin` on all CORS responses;
+  `?refresh=1` gated behind a `REFRESH_TOKEN` secret; dedup keyed on the full normalised
+  title scoped by source (was a 60-char prefix, which collided) with a `dedupeDropped`
+  counter surfaced in the envelope.
 
 ## Planned
 

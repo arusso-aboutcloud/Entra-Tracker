@@ -36,7 +36,11 @@ const ALLOWED_ORIGINS = [
   'http://localhost:2368',
 ];
 
-const CACHE_TTL_SECONDS = 4 * 60 * 60; // 4 hours
+const CACHE_TTL_SECONDS = 4 * 60 * 60; // 4 hours -- HTTP Cache-Control max-age only
+const KV_RETENTION_SECONDS = 30 * 24 * 60 * 60; // 30 days -- KV expirationTtl backstop only.
+// Decoupled from CACHE_TTL_SECONDS on purpose: the 4h cron is the refresh mechanism, and
+// the KV TTL is only a safety net so a single missed/failed cron run doesn't expire the
+// key and force a cold start that resets every item's firstSeen.
 const CACHE_KEY         = 'entra_tracker_v3';
 
 // ── RETENTION HORIZONS ───────────────────────────────────────────────────────
@@ -294,6 +298,19 @@ function classifyByKeyword(title, description) {
   if (CLASSIFIERS.breaking.some(k => text.includes(k)))   return 'breaking';
   if (CLASSIFIERS.preview.some(k => text.includes(k)))    return 'preview';
   return 'new_feature';
+}
+
+// Full-title normalisation for cross-run dedup keys: strip the leading
+// "[Subtype]" prefix, lowercase, strip punctuation, collapse whitespace.
+// Using the full title (not a 60-char slice) avoids collapsing distinct
+// entries that share a long common prefix.
+function normalizeTitleForDedup(title) {
+  return String(title || '')
+    .replace(/^\[[^\]]+\]\s+/, '')
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function makeId(title) {
@@ -956,17 +973,20 @@ async function buildTrackerData(prevItems) {
     return 0;
   });
 
-  // Deduplicate by title prefix (strip subtype prefix for comparison).
-  // external-id-commits items use a source-scoped key so a commits item
-  // is never collapsed into a same-titled changelog item from source 3.
-  // parseExternalIdCommits already de-dupes its own batch, so this only
-  // prevents cross-source loss of the passkey how-to entries.
+  // Deduplicate on the full normalised title, scoped by source. A 60-char
+  // prefix key previously collapsed distinct entries sharing a long common
+  // prefix; the full title fixes that. Scoping by source means the same
+  // title from two different sources is kept as two items (they're
+  // different reportings of it), matching the previous external-id-commits
+  // carve-out but now applied uniformly instead of as a special case.
   const deduped = [];
   const seen    = new Set();
+  let dedupeDropped = 0;
   for (const item of allItems) {
-    const stripped = item.title.replace(/^\[[^\]]+\]\s+/,'').toLowerCase().slice(0,60);
-    const key = item.source === 'external-id-commits' ? `eic:${stripped}` : stripped;
-    if (!seen.has(key)) { seen.add(key); deduped.push(item); }
+    const key = `${item.source}:${normalizeTitleForDedup(item.title)}`;
+    if (seen.has(key)) { dedupeDropped++; continue; }
+    seen.add(key);
+    deduped.push(item);
   }
 
   // Retention: keep the feed bounded and relevance-decayed.
@@ -999,6 +1019,7 @@ async function buildTrackerData(prevItems) {
     externalIdCount,
     newCount,
     coldStart,
+    dedupeDropped,
     sources: {
       'whats-new-md':        countWN,
       'fslogix-docs':        countFS,
@@ -1021,6 +1042,10 @@ function corsHeaders(origin) {
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age':       '86400',
+    // The allowed origin echoed above varies per request Origin header, so any
+    // shared/edge cache must key on it too -- otherwise one origin's CORS
+    // headers get served to a different origin's request.
+    'Vary':                         'Origin',
   };
 }
 
@@ -1039,7 +1064,14 @@ export default {
         headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
       });
 
-    const forceRefresh = url.searchParams.get('refresh') === '1';
+    // refresh=1 forces 6 upstream fetches per call, one of which (the GitHub
+    // commits API) is rate-limited to 60/hr anonymously -- so it must be gated
+    // behind a shared secret rather than honoured for any caller. If the
+    // REFRESH_TOKEN secret isn't configured, refresh=1 is ignored (never honoured).
+    const refreshToken     = request.headers.get('X-Refresh-Token') || '';
+    const forceRefresh     = url.searchParams.get('refresh') === '1'
+                           && !!env.REFRESH_TOKEN
+                           && refreshToken === env.REFRESH_TOKEN;
     const format       = url.searchParams.get('format');
     const nsParam      = url.searchParams.get('namespace');
 
@@ -1098,7 +1130,7 @@ export default {
 
       if (env.ENTRA_CACHE) {
         try {
-          await env.ENTRA_CACHE.put(CACHE_KEY, json, { expirationTtl: CACHE_TTL_SECONDS });
+          await env.ENTRA_CACHE.put(CACHE_KEY, json, { expirationTtl: KV_RETENTION_SECONDS });
         } catch (e) { console.error('KV write:', e.message); }
       }
 
@@ -1154,7 +1186,7 @@ export default {
         const data = await buildTrackerData(prevItems);
         const json = JSON.stringify(data, null, 2);
         if (env.ENTRA_CACHE) {
-          await env.ENTRA_CACHE.put(CACHE_KEY, json, { expirationTtl: CACHE_TTL_SECONDS });
+          await env.ENTRA_CACHE.put(CACHE_KEY, json, { expirationTtl: KV_RETENTION_SECONDS });
           console.log(`Cron OK -- ${data.count} items (${data.externalIdCount} External ID, ${data.newCount} new)`);
         }
       } catch (err) { console.error('Cron:', err.message); }
