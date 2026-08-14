@@ -1,0 +1,32 @@
+[
+  {
+    "id": "eeee1111",
+    "title": "[External ID Docs] Add new how-to: sign in with a passkey",
+    "description": "Add new how-to: sign in with a passkey",
+    "link": "https://github.com/MicrosoftDocs/entra-docs/commit/abc123",
+    "pubDate": "2026-05-10",
+    "category": "new_feature",
+    "status": "green",
+    "impact": "low",
+    "deadline": null,
+    "daysRemaining": null,
+    "source": "external-id-commits",
+    "namespace": "external-id",
+    "announcedDate": "2026-05-10"
+  },
+  {
+    "id": "eeee2222",
+    "title": "Add new how-to: sign in with a passkey",
+    "description": "Curated changelog entry covering the same how-to guide.",
+    "link": "https://learn.microsoft.com/en-us/entra/fundamentals/whats-new",
+    "pubDate": "May 2026",
+    "category": "new_feature",
+    "status": "green",
+    "impact": "low",
+    "deadline": null,
+    "daysRemaining": null,
+    "source": "entra-whatsnew-md",
+    "namespace": "external-id",
+    "announcedDate": "2026-05-01"
+  }
+]

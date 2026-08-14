@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/arusso-aboutcloud/Entra-Tracker/actions/workflows/trivy-scan.yml"><img src="./trivy-badge.svg" alt="Trivy Security Scan" height="24"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/sources-5-blue" alt="5 data sources">
+  <img src="https://img.shields.io/badge/sources-6-blue" alt="6 data sources">
   <img src="https://img.shields.io/badge/update-every_4h-green" alt="Updated every 4 hours">
   <img src="https://img.shields.io/badge/cost-€0/month-brightgreen" alt="€0/month">
 </p>
@@ -27,7 +27,7 @@
 
 ## What It Does
 
-A fully automated, €0/month change tracker that monitors five official Microsoft sources for Entra ID updates -- what's new, previews, retirements, and breaking changes. Every update is classified by type, service category, and impact, then served through a searchable, filterable web UI.
+A fully automated, €0/month change tracker that monitors six official Microsoft sources for Entra ID updates -- what's new, previews, retirements, and breaking changes. Every update is classified by type, service category, and impact, then served through a searchable, filterable web UI.
 
 ---
 
@@ -72,7 +72,8 @@ This repository is continuously scanned by [Trivy](https://trivy.dev/) on every 
 **Cron Trigger:** Every 4 hours -- scrapes all 5 sources in parallel and refreshes KV.
 
 **CI Deploy:** `.github/workflows/deploy-worker.yml` runs `wrangler deploy` automatically
-on every push to `main` that touches `api/**`. Requires two repo secrets set in
+on every push to `main` that touches `api/**`. Runs on Node.js 24 (`FORCE_JAVASCRIPT_ACTIONS_TO_NODE24`
++ `wrangler-action@v4`). Requires two repo secrets set in
 GitHub Settings > Secrets and variables > Actions:
 `CLOUDFLARE_API_TOKEN` (Workers Scripts:Edit permission) and `CLOUDFLARE_ACCOUNT_ID`.
 
@@ -111,9 +112,13 @@ Returns full article catalog with metadata.
 
 **`announcedDate` field:** Each item now includes `announcedDate` (ISO `yyyy-mm-dd` or `null`). Populated from the `## Month YYYY` section header in whats-new.md / docs changelogs, the commit date in the commits source, or the RSS pubDate. This is the publication/announcement date only — it never becomes a deadline.
 
-**`dedupeDropped` field:** The envelope includes a `dedupeDropped` count — how many items were collapsed as duplicates (same source + normalised title) during a build. A nonzero value is expected in normal operation; it exists so silent over-dedup is visible instead of hidden.
+**`dedupeDropped` field:** The envelope includes a `dedupeDropped` count from dedupe **stage 1** — items collapsed because the *same source* reported the exact same normalised title more than once in one build. This should be near-zero in normal operation (it indicates a parser emitting a genuine repeat, e.g. a stray re-scan of a block); a persistently nonzero value is worth investigating, not expected.
+
+**`crossSourceMerged` field:** The envelope includes a `crossSourceMerged` count from dedupe **stage 2** — items that were the *same underlying change reported by more than one Microsoft source* (e.g. both `whats-new.md` and a docs changelog cover the same retirement) and were merged into a single item. Unlike `dedupeDropped`, a nonzero `crossSourceMerged` is expected and routine — it's the normal case for changes that get dual coverage. Merged items keep the existing scalar `source`/`link` fields pointing at the highest-provenance contributor, and add `sources: []` / `links: []` arrays listing every source that reported the change. `external-id-commits` items are exempt from stage 2 in both directions (never merged into another source's item, never absorb one) since they're a pre-changelog how-to watch, not independent coverage of the same announcement.
 
 **Cache behavior:** The HTTP `Cache-Control: max-age` and the underlying KV entry's TTL are decoupled. Responses are cached for 4 hours (matching the cron refresh interval), but the KV entry itself persists for 30 days as a backstop — so a single missed or failed cron run no longer expires the cache and forces a cold start (which would reset every item's `firstSeen` and republish the whole feed as "new").
+
+**CORS:** every response (including 404s and errors) carries `Access-Control-Allow-Origin` for the caller's origin plus `Vary: Origin`, so shared/edge caches key on the request origin instead of serving one origin's CORS headers to another.
 
 ---
 
@@ -170,16 +175,23 @@ Tracked per item based on Microsoft's own categorization (Entra ID Protection, C
 ```
 ├── api/                  # Worker script
 │   ├── worker.js         # Full worker source
+│   ├── worker.test.js    # Node test-runner unit tests (node --test)
+│   ├── __fixtures__/     # Checked-in fixtures for parser/scoring tests
+│   ├── package.json      # type:module marker for the test runner (no deps)
 │   └── wrangler.toml     # Worker configuration
 ├── web/                  # Pages frontend
 │   ├── index.html        # Full frontend
 │   └── wrangler.toml     # Pages configuration
+├── scripts/               # Repo maintenance scripts
+│   └── generate_trivy_badge.py  # Renders trivy-badge.svg from scan results
 ├── .github/workflows/    # CI/CD
+│   ├── deploy-worker.yml # Deploys the Worker to Cloudflare on push to main
 │   └── trivy-scan.yml    # Automated security scanning
 ├── architecture.svg      # Architecture diagram
 ├── trivy-badge.svg       # Auto-updated security badge
 ├── LICENSE
-└── README.md
+├── README.md
+└── ROADMAP.md
 ```
 
 ---
@@ -191,6 +203,7 @@ Tracked per item based on Microsoft's own categorization (Entra ID Protection, C
 3. **Create KV namespace:** `wrangler kv:namespace create ENTRA_CACHE`
 4. **Update `wrangler.toml`** with your KV namespace ID
 5. **Deploy:** `wrangler deploy`
+6. **Run tests:** `cd api && node --test` (no install step — zero runtime dependencies)
 
 ---
 
@@ -204,4 +217,4 @@ MIT — see [LICENSE](./LICENSE) for full text.
 
 ---
 
-*Last reconciled: 2026-04-29*
+*Last reconciled: 2026-08-14*

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "dddd1111",
+    "title": "Privileged Identity Management (PIM) iteration 2 API retirement",
+    "description": "The Privileged Identity Management iteration 2 API will be retired.",
+    "link": "https://developer.microsoft.com/en-us/graph/changelog/",
+    "pubDate": "Mon, 02 Jan 2026 00:00:00 GMT",
+    "category": "retirement",
+    "status": "yellow",
+    "impact": "high",
+    "deadline": "2026-09-30",
+    "daysRemaining": 47,
+    "source": "graph-changelog",
+    "namespace": "entra-id",
+    "announcedDate": "2026-01-02"
+  },
+  {
+    "id": "dddd2222",
+    "title": "Privileged Identity Management (PIM) iteration 2 API retirement notice",
+    "description": "Microsoft Graph is retiring the PIM iteration 2 API surface. Unrelated re-coverage many months later.",
+    "link": "https://learn.microsoft.com/en-us/entra/fundamentals/whats-new",
+    "pubDate": "June 2026",
+    "category": "retirement",
+    "status": "yellow",
+    "impact": "high",
+    "deadline": null,
+    "daysRemaining": null,
+    "source": "entra-whatsnew-md",
+    "namespace": "entra-id",
+    "announcedDate": "2026-06-01"
+  }
+]
