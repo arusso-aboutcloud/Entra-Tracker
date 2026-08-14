@@ -81,6 +81,20 @@ GitHub Settings > Secrets and variables > Actions:
 `wrangler secret put REFRESH_TOKEN --config api/wrangler.toml` or the Cloudflare
 dashboard. Gates the `?refresh=1` bypass; without it, `refresh=1` is ignored.
 
+**Deploy runbook — do this after any deploy that touches cache-write timing
+or identity/dedup logic (worth doing after any deploy, cheap either way):**
+once `REFRESH_TOKEN` is set, call `?refresh=1` with the correct
+`X-Refresh-Token` header immediately after the deploy finishes. This forces
+the KV entry to rewrite under the new code *before* the next natural 4h
+cron cycle, carrying `firstSeen` forward under the new logic instead of
+leaving the old entry's TTL/format to run out on its own. This would have
+prevented the 2026-08-14 cold start documented in PR #22 — the fix that
+shipped in that PR only governs writes made after it deployed, so the
+already-in-flight entry (written by the pre-fix code, with the old 4h TTL
+already counting down) expired on schedule regardless, one cron cycle
+after the fix landed, and forced exactly one more cold start before the
+new logic took over.
+
 ### Pages
 
 | Property | Value |
@@ -120,6 +134,20 @@ Returns full article catalog with metadata.
 
 **CORS:** every response (including 404s and errors) carries `Access-Control-Allow-Origin` for the caller's origin plus `Vary: Origin`, so shared/edge caches key on the request origin instead of serving one origin's CORS headers to another.
 
+**Deadline fields (`deadlineConfidence`, `deadlineEvidence`, `deadlinePrecision`):** every item's deadline now comes with how sure the tracker is about it. `deadlineConfidence` is `'stated'` (an explicit cessation phrase — "retired", "deprecated", "must migrate" — in the same sentence as the date), `'derived'` (cutoff language nearby but not same-sentence), `'inferred'` (the best candidate found, but without clear supporting language), or `null` (no date found at all). `deadlineEvidence` is the literal sentence the date was taken from. `deadlinePrecision` is `'day'` or `'month'` depending on how precisely Microsoft stated it. The frontend does not render a countdown for `'inferred'` — it shows the date with an explicit "unconfirmed" hedge instead. See `/methodology` in the web UI for the plain-language version.
+
+**`evidence` field:** every item carries `evidence: { tier, basis, quote, sourceUrl }` recording how strong Microsoft's own signal was. `tier` is `'A'` (structured metadata — a `**Type:**` block or a Graph changelog deprecation), `'B'` (official documentation content without structured metadata), or `'C'` (a repo signal that a document moved — an indicator, not an announcement; currently only the `external-id-commits` source). `basis` is the specific mechanism: `'ms-type-field' | 'graph-changelog' | 'doc-callout' | 'repo-signal' | 'keyword-heuristic'`. Cross-source merges now rank by tier first (A beats B beats C), falling back to the fixed source-priority table only to break ties within the same tier.
+
+**`sources`/`links` arrays and `titleHistory`:** unchanged from Phase 0.1's cross-source merge — see that section below. `titleHistory: []` is new: when an item's title is reworded between two builds (Microsoft edits a whats-new.md heading) and the tracker's similarity matching recognises it as the same item, the prior title is appended here and `firstSeen` carries forward instead of resetting.
+
+**`firstSeenEstimated` field:** `true` when `firstSeen` was estimated from `announcedDate` during a cold start (no usable prior snapshot) rather than observed directly; `false` otherwise, including for every item in normal operation. See "Cold-start firstSeen repair" below.
+
+**Item identity (`id`):** composed from `source` + `link` + normalised title (previously a bare hash of the title, with ad hoc per-parser prefixes). The format is unchanged (8 hex characters). A rewording of an item's title is now tolerated via similarity matching (same source, same `announcedDate` month, title similarity ≥0.70 — validated against a real MicrosoftDocs heading-rename commit, see `api/worker.js`'s `TITLE_REWORD_SIMILARITY_THRESHOLD` comment) rather than minting a new id and resetting `firstSeen`.
+
+**Cold-start `firstSeen` repair:** on a cold start (no usable prior snapshot — see Cache behavior above), each item's `firstSeen` is seeded from its `announcedDate` when that's in the past, rather than flattened to the day of the cold start for every item at once (the failure mode documented in PR #22, 2026-08-14). Items without a usable `announcedDate` still fall back to the cold-start date. The RSS feed also now falls back to `announcedDate` as a secondary sort key when `firstSeen` values tie, so a future cold start degrades to an estimated-but-ordered feed instead of collapsing to arrival order.
+
+**Threshold note:** the cross-source merge similarity threshold (0.82, Phase 0.1) has only ever fired on hand-built fixtures — `crossSourceMerged` has been 0 against live data every time it's been checked so far. The first time it fires for real, the merge should be spot-checked before being trusted; don't tune the threshold without that evidence.
+
 ---
 
 ## Data Sources
@@ -152,6 +180,9 @@ Changelog parsers track raw-entry counts; if a source matches zero entries the A
 ### Service Categories
 Tracked per item based on Microsoft's own categorization (Entra ID Protection, Conditional Access, External ID, B2C, etc.).
 
+### Evidence Tiers
+Every item also carries a Tier A/B/C badge recording how strong Microsoft's own signal was for its classification — see the `evidence` field above, or the `/methodology` section in the web UI for the plain-language version aimed at Entra admins rather than developers.
+
 ---
 
 ## Frontend Features
@@ -167,6 +198,9 @@ Tracked per item based on Microsoft's own categorization (Entra ID Protection, C
 - 🔃 Newest-announced sort — sort the entire feed by `announcedDate` descending to see what's freshest
 - ⭐ On Radar (client-side watchlist) — star any item to add it to your personal watchlist; persisted in `localStorage` under key `entratracker_radar`; filter to starred items with the "On Radar" toggle; cross-device sync is out of scope (see ROADMAP.md)
 - 📡 Subscribe / Export — popover button surfacing RSS feeds (full and External ID), CSV export, and JSON API with one-click copy-to-clipboard for pasting into RSS readers, Teams, Power Automate, and spreadsheets
+- 🅰️ Evidence tier badge (Tier A/B/C) on every card — how strong Microsoft's own signal was; see the `/methodology` section for what each tier means
+- ⏳ Deadline confidence hedge — cards with an `'inferred'`-confidence deadline show the date plainly ("possible date … unconfirmed") instead of a countdown, since a countdown implies more certainty than the source text actually supports
+- 📊 Methodology section — collapsible, plain-language explanation of evidence tiers and deadline confidence, written for an Entra admin rather than a developer
 
 ---
 
@@ -177,6 +211,10 @@ Tracked per item based on Microsoft's own categorization (Entra ID Protection, C
 │   ├── worker.js         # Full worker source
 │   ├── worker.test.js    # Node test-runner unit tests (node --test)
 │   ├── __fixtures__/     # Checked-in fixtures for parser/scoring tests
+│   │   ├── dedupe/       # Item-level fixtures (dedupe/merge logic, Phase 0.1)
+│   │   ├── deadline/     # Real captured Microsoft text (deadline scoring, Phase 1)
+│   │   ├── identity/     # Real title-rewording cases (item identity, Phase 1)
+│   │   └── evidence/     # Cross-source tier-ranking fixture (Phase 1)
 │   ├── package.json      # type:module marker for the test runner (no deps)
 │   └── wrangler.toml     # Worker configuration
 ├── web/                  # Pages frontend

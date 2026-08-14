@@ -1,0 +1,1 @@
+Deprecated the privilegedAccess resource and all the associated APIs that are part of the Privileged Identity Management (PIM) iteration 2 APIs for Azure resources. These APIs are deprecated and will stop returning data on October 28, 2026. Use the new Azure REST PIM API for Azure resource roles.

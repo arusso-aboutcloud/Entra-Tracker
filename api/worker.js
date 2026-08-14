@@ -170,15 +170,90 @@ function pubDateToISO(pubDate) {
   } catch (e) { return null; }
 }
 
-// Diff current items against the previous snapshot's ids. Tags isNew, and
-// carries firstSeen forward so an item's first-seen date is stable across runs.
-function applyDiff(currentItems, prevItems) {
-  const prevById = new Map((prevItems || []).map(i => [i.id, i]));
+// High similarity bar for "this is the same item, reworded" matching in
+// applyDiff (see below). Validated against a real MicrosoftDocs commit
+// (entra-docs@ac6b47d6, "Update jailbreak detection heading to include root
+// detection": "Upcoming Changes - Jailbreak Detection in Authenticator App"
+// -> "Upcoming Changes – Jailbreak/root Detection in Authenticator App")
+// which scores 0.75 under titleSimilarity() -- a genuine minor Microsoft
+// rewording, not a hand-picked example. 0.82 (Phase 0.1's cross-source
+// threshold) would have missed it, so this is a separate, lower constant:
+// the two thresholds guard different failure modes (cross-source over-
+// merging distinct changes vs. same-source identity continuity across a
+// rewording) and there's no reason to assume they should coincide. Checked
+// against real Preview->GA title pairs for the same feature (e.g. "Public
+// Preview - Account Discovery" vs "General Availability - Account
+// Discovery", similarity 0.33) to confirm 0.70 does NOT collapse genuinely
+// distinct lifecycle-stage announcements into one item.
+const TITLE_REWORD_SIMILARITY_THRESHOLD = 0.70;
+
+// Diff current items against the previous snapshot. Tags isNew, and carries
+// firstSeen (and titleHistory) forward so an item's identity is stable
+// across runs even when Microsoft reworks its title.
+//
+// Matching is two-tier: an exact id match first (title unchanged, or at
+// least normalises the same), then -- only if that misses -- a similarity
+// fallback within the same source: a previous item with the same
+// announcedDate month and a title similarity >=TITLE_REWORD_SIMILARITY_THRESHOLD
+// is treated as the same item. This is also what makes the makeId() formula
+// change (this same phase, see makeId) a non-event for firstSeen continuity:
+// every existing item's title is unchanged, so it trivially clears the
+// similarity bar (similarity 1.0) and firstSeen carries forward even though
+// every id value changes on this deploy. See the PR description for why
+// this isn't a second cold start.
+//
+// `coldStart` changes how firstSeen is seeded when NEITHER match succeeds:
+// normally that means a genuinely new item (firstSeen = today), but on a
+// cold start (no usable prior snapshot) it instead means "we have no history
+// to compare against", so firstSeen is estimated from announcedDate where
+// possible (see 1e) instead of flattening every item to today's date.
+function applyDiff(currentItems, prevItems, coldStart) {
+  const prevList = prevItems || [];
+  const prevById = new Map(prevList.map(i => [i.id, i]));
+  const prevBySource = new Map();
+  for (const p of prevList) {
+    const bucket = prevBySource.get(p.source);
+    if (bucket) bucket.push(p); else prevBySource.set(p.source, [p]);
+  }
+  const usedPrevIds = new Set();
   const nowISO = new Date().toISOString().split('T')[0];
+
   for (const item of currentItems) {
-    const prev = prevById.get(item.id);
-    item.isNew     = !prev;
-    item.firstSeen = (prev && prev.firstSeen) ? prev.firstSeen : nowISO;
+    let prev = prevById.get(item.id);
+    let matchedBySimilarity = false;
+
+    if (!prev) {
+      const candidates = prevBySource.get(item.source) || [];
+      let best = null, bestSim = 0;
+      for (const cand of candidates) {
+        if (usedPrevIds.has(cand.id)) continue;
+        if (monthDiff(item.announcedDate, cand.announcedDate) !== 0) continue; // requires both present and equal
+        const sim = titleSimilarity(item.title, cand.title);
+        if (sim >= TITLE_REWORD_SIMILARITY_THRESHOLD && sim > bestSim) { best = cand; bestSim = sim; }
+      }
+      if (best) { prev = best; matchedBySimilarity = true; }
+    }
+
+    if (prev) usedPrevIds.add(prev.id);
+    item.isNew = !prev;
+
+    if (prev && prev.firstSeen) {
+      item.firstSeen = prev.firstSeen;
+      item.firstSeenEstimated = false;
+    } else if (coldStart && item.announcedDate && item.announcedDate < nowISO) {
+      // Cold start, nothing to carry forward: seed from announcedDate
+      // instead of flattening every item's firstSeen to today (see 1e).
+      item.firstSeen = item.announcedDate;
+      item.firstSeenEstimated = true;
+    } else {
+      item.firstSeen = nowISO;
+      item.firstSeenEstimated = false;
+    }
+
+    const priorHistory = (prev && Array.isArray(prev.titleHistory)) ? prev.titleHistory : [];
+    const reworded = matchedBySimilarity && prev
+      && normalizeTitleForDedup(prev.title) !== normalizeTitleForDedup(item.title);
+    item.titleHistory = reworded ? [...priorHistory, prev.title] : priorHistory;
   }
   return currentItems;
 }
@@ -208,67 +283,197 @@ const DEADLINE_LANGUAGE = [
   'will be blocked', 'will be enforced', 'enforcement begins'
 ];
 
-// True if any expiry phrase occurs within `window` chars of the matched
-// date string inside text. Keeps "deprecated ... 2026-10-28" (deadline)
-// distinct from "deprecated basic auth" sitting paragraphs away from an
-// unrelated "Starting May 2026" (not a deadline for THIS date).
-function hasExpiryLanguageNear(text, dateStr, window) {
-  const lower = text.toLowerCase();
-  const idx = lower.indexOf(dateStr.toLowerCase());
-  if (idx === -1) return false;
-  const from = Math.max(0, idx - window);
-  const to   = Math.min(lower.length, idx + dateStr.length + window);
-  const slice = lower.slice(from, to);
-  return DEADLINE_LANGUAGE.some(k => slice.includes(k));
+// Rollout/announcement language that means a nearby date is when something
+// STARTS, not when it ENDS -- the negative-scoring counterpart to
+// DEADLINE_LANGUAGE. "Starting March 2026 we begin rollout" should not
+// outscore "fully retired by November 2026" just because it comes first.
+const ROLLOUT_LANGUAGE = [
+  'starting', 'beginning', 'rolling out', 'available from',
+  'announced', 'now generally available',
+];
+
+// Distance in characters from [offset, offset+length) to the nearest
+// occurrence of any keyword in `lower` (already-lowercased haystack). 0 if a
+// keyword overlaps the span itself. null if no keyword occurs anywhere.
+function nearestKeywordDistance(lower, offset, length, keywords) {
+  let best = null;
+  const spanEnd = offset + length;
+  for (const kw of keywords) {
+    let idx = lower.indexOf(kw);
+    while (idx !== -1) {
+      const kwEnd = idx + kw.length;
+      let dist;
+      if (kwEnd <= offset) dist = offset - kwEnd;
+      else if (idx >= spanEnd) dist = idx - spanEnd;
+      else dist = 0;
+      if (best === null || dist < best) best = dist;
+      idx = lower.indexOf(kw, idx + 1);
+    }
+  }
+  return best;
 }
 
-function extractDeadline(text, category) {
+// Tiered weight: closer keywords score higher, distant ones taper to 0.
+// Same tiering used for both the positive (deadline-language) and negative
+// (rollout-language) proximity signals -- only the sign differs at the call site.
+function proximityWeight(distance) {
+  if (distance == null) return 0;
+  if (distance <= 20)  return 6;
+  if (distance <= 60)  return 4;
+  if (distance <= 160) return 2;
+  return 0;
+}
+
+// The sentence (naive '.'/'!'/'?'-delimited) containing character offset
+// `at` in `text`. Falls back to the whole text if no boundary is found (e.g.
+// a single-sentence fragment). Used both for deadline evidence quotes and
+// classification-provenance quotes.
+function sentenceContaining(text, at) {
+  const re = /[.!?](?:\s+|$)/g;
+  let start = 0;
+  let m;
+  while ((m = re.exec(text))) {
+    const end = m.index + 1;
+    if (at >= start && at < end) return text.slice(start, end).trim();
+    start = re.lastIndex;
+  }
+  if (at >= start) return text.slice(start).trim();
+  return text.trim();
+}
+
+// True if `keywords` contains a phrase occurring anywhere inside `sentence`
+// (case-insensitive). Used for the same-sentence cessation-verb bonus.
+function sentenceContainsAny(sentence, keywords) {
+  const lower = sentence.toLowerCase();
+  return keywords.some(k => lower.includes(k));
+}
+
+// Same year+month as an ISO "yyyy-mm-dd"/"yyyy-mm-01" announcedDate string.
+function sameYearMonth(date, announcedDateStr) {
+  if (!announcedDateStr) return false;
+  const [y, m] = announcedDateStr.split('-').map(Number);
+  if (!y || !m) return false;
+  return date.getFullYear() === y && (date.getMonth() + 1) === m;
+}
+
+// Collect every date candidate across all four formats (ISO, MDY, DMY, MY),
+// each with its character offset (into `text`, not lowercased -- offsets are
+// identical either way since lowercasing preserves length for ASCII) and its
+// precision. Unlike the old code's un-flagged .match(), this uses matchAll
+// so a date anywhere else in the body can no longer silently outrank the
+// date that is actually the deadline just by matching an earlier-precedence
+// format.
+function collectDateCandidates(text) {
   const lower = text.toLowerCase();
+  const candidates = [];
+  const monthNames = 'january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec';
 
-  // Try each date format in order (ISO, MDY, DMY, MY)
-  // Return the first matching date only if rule A or B is satisfied.
-
-  const isoM = lower.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (isoM) {
-    const d = new Date(`${isoM[1]}-${isoM[2]}-${isoM[3]}`);
-    if (!isNaN(d)) {
-      if (category === 'retirement' || category === 'breaking') return d;
-      if (hasExpiryLanguageNear(text, isoM[0], 160)) return d;
-      return null;
-    }
+  for (const m of lower.matchAll(/\d{4}-\d{2}-\d{2}/g)) {
+    const d = new Date(`${m[0]}T00:00:00`);
+    if (!isNaN(d)) candidates.push({ offset: m.index, length: m[0].length, date: d, precision: 'day' });
   }
 
-  const mdyM = lower.match(/(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2}),?\s+(\d{4})/);
-  if (mdyM) {
-    const d = new Date(+mdyM[3], MONTHS[mdyM[1]]-1, +mdyM[2]);
-    if (!isNaN(d)) {
-      if (category === 'retirement' || category === 'breaking') return d;
-      if (hasExpiryLanguageNear(text, mdyM[0], 160)) return d;
-      return null;
-    }
+  const mdyRe = new RegExp(`(${monthNames})\\s+(\\d{1,2}),?\\s+(\\d{4})`, 'g');
+  for (const m of lower.matchAll(mdyRe)) {
+    const d = new Date(+m[3], MONTHS[m[1]] - 1, +m[2]);
+    if (!isNaN(d)) candidates.push({ offset: m.index, length: m[0].length, date: d, precision: 'day' });
   }
 
-  const dmyM = lower.match(/(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{4})/);
-  if (dmyM) {
-    const d = new Date(+dmyM[3], MONTHS[dmyM[2]]-1, +dmyM[1]);
-    if (!isNaN(d)) {
-      if (category === 'retirement' || category === 'breaking') return d;
-      if (hasExpiryLanguageNear(text, dmyM[0], 160)) return d;
-      return null;
-    }
+  const dmyRe = new RegExp(`(\\d{1,2})\\s+(${monthNames})\\s+(\\d{4})`, 'g');
+  for (const m of lower.matchAll(dmyRe)) {
+    const d = new Date(+m[3], MONTHS[m[2]] - 1, +m[1]);
+    if (!isNaN(d)) candidates.push({ offset: m.index, length: m[0].length, date: d, precision: 'day' });
   }
 
-  const myM = lower.match(/(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{4})/);
-  if (myM) {
-    const d = new Date(+myM[2], MONTHS[myM[1]], 0);
-    if (!isNaN(d)) {
-      if (category === 'retirement' || category === 'breaking') return d;
-      if (hasExpiryLanguageNear(text, myM[0], 160)) return d;
-      return null;
-    }
+  // MY candidates that fall INSIDE an already-collected day-precision span
+  // are the same date matched twice (e.g. "15 March 2026" also matches
+  // "March 2026") -- skip those, keep only standalone month-year mentions.
+  const dayPrecisionSpans = candidates.map(c => [c.offset, c.offset + c.length]);
+  const myRe = new RegExp(`(${monthNames})\\s+(\\d{4})`, 'g');
+  for (const m of lower.matchAll(myRe)) {
+    const start = m.index, end = m.index + m[0].length;
+    const subsumed = dayPrecisionSpans.some(([s, e]) => start >= s && end <= e);
+    if (subsumed) continue;
+    // End-of-month convention: new Date(year, monthIndex(1-based), 0) is the
+    // last day of the PREVIOUS month param, i.e. the last day of the stated
+    // month -- e.g. "March 2026" -> new Date(2026, 3, 0) -> 2026-03-31.
+    const d = new Date(+m[2], MONTHS[m[1]], 0);
+    if (!isNaN(d)) candidates.push({ offset: m.index, length: m[0].length, date: d, precision: 'month' });
   }
 
-  return null;
+  return candidates;
+}
+
+// Replaces the old first-match-wins extractDeadline. Scores every date
+// candidate in the text and picks the best one, rather than accepting
+// whichever format happens to match first (the old bug: an ISO date
+// anywhere in the body beat the MDY date that was actually the deadline)
+// and rather than bypassing the language check entirely for
+// retirement/breaking (the old bug: ANY date in a retirement entry was
+// accepted as the deadline, rollout language and all).
+//
+// Returns { deadline, deadlineConfidence, deadlineEvidence, deadlinePrecision }.
+// `deadline` is a Date or null -- callers convert to ISO/compute
+// daysRemaining exactly as before.
+function extractDeadline(text, category, announcedDate) {
+  const lower = text.toLowerCase();
+  const candidates = collectDateCandidates(text);
+  const nullResult = { deadline: null, deadlineConfidence: null, deadlineEvidence: null, deadlinePrecision: null };
+  if (candidates.length === 0) return nullResult;
+
+  const nowMs = Date.now();
+  const scored = candidates.map(c => {
+    const sentence = sentenceContaining(text, c.offset);
+    const deadlineDist = nearestKeywordDistance(lower, c.offset, c.length, DEADLINE_LANGUAGE);
+    const rolloutDist  = nearestKeywordDistance(lower, c.offset, c.length, ROLLOUT_LANGUAGE);
+    const sameSentenceCessation = sentenceContainsAny(sentence, DEADLINE_LANGUAGE);
+    const isFuture = c.date.getTime() > nowMs;
+
+    let score = 0;
+    score += proximityWeight(deadlineDist);          // positive: near deadline language
+    if (sameSentenceCessation) score += 4;             // positive: cessation verb, same sentence
+    if (c.precision === 'day') score += 2;              // positive: day-level precision
+    score += isFuture ? 2 : -3;                          // positive/negative: future vs past
+    score -= proximityWeight(rolloutDist);              // negative: near rollout language
+    if (sameYearMonth(c.date, announcedDate)) score -= 3; // negative: same month as announcedDate
+
+    let confidence;
+    if (sameSentenceCessation) confidence = 'stated';
+    else if (deadlineDist !== null && deadlineDist <= 160) confidence = 'derived';
+    else confidence = 'inferred';
+
+    return { ...c, score, sentence, confidence };
+  });
+
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    // Tie-break: for retirement/breaking, prefer the LATEST qualifying
+    // future date, not the earliest -- a cutoff can't be walked back by an
+    // earlier date incidentally scoring the same.
+    if (category === 'retirement' || category === 'breaking') {
+      return b.date.getTime() - a.date.getTime();
+    }
+    return 0;
+  });
+
+  const best = scored[0];
+
+  // Outside retirement/breaking, a weakly-supported ("inferred") candidate
+  // is not enough to assert a deadline -- e.g. a preview/new-feature entry
+  // that happens to mention an unrelated date nearby shouldn't grow a
+  // countdown. Only retirement/breaking accept an inferred date, because
+  // those categories are much more likely to genuinely have a real cutoff
+  // even when the prose doesn't spell it out clearly.
+  if (category !== 'retirement' && category !== 'breaking' && best.confidence === 'inferred') {
+    return nullResult;
+  }
+
+  return {
+    deadline:           best.date,
+    deadlineConfidence: best.confidence,
+    deadlineEvidence:   best.sentence,
+    deadlinePrecision:  best.precision,
+  };
 }
 
 function deriveStatus(deadline) {
@@ -300,6 +505,43 @@ function classifyByKeyword(title, description) {
   return 'new_feature';
 }
 
+// ── CLASSIFICATION PROVENANCE (evidence tiers) ──────────────────────────────
+// Every item carries an `evidence` object recording HOW STRONG Microsoft's
+// own signal was (tier) and WHICH mechanism produced the classification
+// (basis), plus the literal quote and a link back to the source.
+//
+// Tier A: announced as a change with structured metadata (a **Type:** block,
+//         a Graph changelog deprecation sentence).
+// Tier B: official documentation content asserting the change, without
+//         structured metadata (a doc changelog bullet, an FSLogix callout,
+//         or a whats-new.md entry that lacked a parseable Type: field).
+// Tier C: a repo signal that a document moved (the commits watch) -- an
+//         indicator that something is coming, not an announcement of it.
+const EVIDENCE_TIER_RANK = { A: 0, B: 1, C: 2 };
+function evidenceTierRank(tier) {
+  return EVIDENCE_TIER_RANK[tier] ?? 3;
+}
+
+// Finds the sentence that justifies a keyword-heuristic classification: the
+// first sentence containing one of the category's own CLASSIFIERS keywords.
+// Falls back to a leading slice of the text if no keyword sentence is found
+// (e.g. classification fell through to the new_feature default).
+function classificationQuote(category, contentText) {
+  const keywords = CLASSIFIERS[category];
+  if (keywords) {
+    const lower = contentText.toLowerCase();
+    for (const kw of keywords) {
+      const idx = lower.indexOf(kw);
+      if (idx !== -1) return sentenceContaining(contentText, idx).slice(0, 240);
+    }
+  }
+  return contentText.slice(0, 160).trim();
+}
+
+function buildEvidence(tier, basis, quote, sourceUrl) {
+  return { tier, basis, quote: (quote || '').slice(0, 240), sourceUrl: sourceUrl || null };
+}
+
 // Full-title normalisation for cross-run dedup keys: strip the leading
 // "[Subtype]" prefix, lowercase, strip punctuation, collapse whitespace.
 // Using the full title (not a 60-char slice) avoids collapsing distinct
@@ -313,15 +555,39 @@ function normalizeTitleForDedup(title) {
     .trim();
 }
 
-function makeId(title) {
-  // FNV-1a 32-bit over the full title -> stable, collision-resistant id.
-  const s = String(title || '');
+// FNV-1a 32-bit over a string -> stable 8-hex-char id. Pure hash function,
+// no identity semantics -- see makeId() for what gets hashed and why.
+function fnv1a(s) {
+  s = String(s || '');
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
     h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
   }
   return ('00000000' + h.toString(16)).slice(-8);
+}
+
+// Item identity: source + canonical link + normalised title, hashed. This
+// replaces the old makeId(title) (a bare hash of the title alone, sometimes
+// with an ad hoc prefix like `graph:` or `eic:` bolted on per-parser to fake
+// source-scoping). A bare title hash meant ANY Microsoft rewording of a
+// whats-new.md heading minted a new id, resetting firstSeen and re-firing
+// the RSS feed for an item that hadn't actually changed in substance.
+//
+// Composing from source+link+title doesn't eliminate that on its own --
+// most parsers' `link` is a constant per-source base URL, so title still
+// does the discriminating work for those sources. What actually fixes the
+// rewording problem is the similarity fallback in applyDiff(); this
+// function only defines what "the same identity" is computed FROM.
+//
+// The id FORMAT is unchanged (8 hex chars) and stays stable for items whose
+// (source, link, title) triple doesn't change. It is NOT byte-stable across
+// THIS deploy for existing items, because the hash input formula itself
+// changed (every parser used a different ad hoc input before). That one-time
+// value change is absorbed by applyDiff's similarity fallback -- see the
+// comment on TITLE_REWORD_SIMILARITY_THRESHOLD and the PR description.
+function makeId(source, link, title) {
+  return fnv1a(`${source}|${link || ''}|${normalizeTitleForDedup(title)}`);
 }
 
 // ── TWO-STAGE DEDUPE ─────────────────────────────────────────────────────────
@@ -427,7 +693,14 @@ function mergeCrossSource(items) {
 
     crossSourceMerged++;
     const existing = survivors[matchIdx];
-    const winnerIsIncoming = sourceRank(item.source) < sourceRank(existing.source);
+    // Winner selection: higher evidence tier wins; the fixed CROSS_SOURCE_RANK
+    // table (Phase 0.1's placeholder, kept for exactly this) only breaks ties
+    // within the same tier. This is the wholesale swap Phase 0.1 anticipated.
+    const itemTierRank     = evidenceTierRank(item.evidence && item.evidence.tier);
+    const existingTierRank = evidenceTierRank(existing.evidence && existing.evidence.tier);
+    const winnerIsIncoming = itemTierRank !== existingTierRank
+      ? itemTierRank < existingTierRank
+      : sourceRank(item.source) < sourceRank(existing.source);
     const base  = winnerIsIncoming ? item : existing;
     const other = winnerIsIncoming ? existing : item;
 
@@ -476,11 +749,19 @@ function toRSS(items, namespace) {
   const SELF = 'https://api.aboutcloud.io/entra-tracker?format=rss'
                + (namespace === 'external-id' ? '&namespace=external-id' : '');
   const titleSuffix = namespace === 'external-id' ? ' (External ID)' : '';
-  // newest-first by firstSeen, capped at 50
+  // newest-first by firstSeen, capped at 50. Falls back to announcedDate as
+  // a secondary sort key when firstSeen values tie -- guards against a
+  // future cold start flattening every item's firstSeen to one date and
+  // collapsing the feed order to arbitrary arrival order (the 2026-08-14
+  // incident, PR #22).
   const sorted = items.slice().sort((a, b) => {
     const da = a.firstSeen || a.announcedDate || '';
     const db = b.firstSeen || b.announcedDate || '';
-    return db.localeCompare(da);
+    const cmp = db.localeCompare(da);
+    if (cmp !== 0) return cmp;
+    const aa = a.announcedDate || '';
+    const ab = b.announcedDate || '';
+    return ab.localeCompare(aa);
   }).slice(0, 50);
   const now = new Date().toUTCString();
   const entries = sorted.map(it => {
@@ -585,6 +866,8 @@ function parseWhatsNewMarkdown(markdown) {
       if (!title || title.length < 5) continue;
 
       const description = descLines.slice(0, 4).join(' ').slice(0, 600);
+      const link         = `https://learn.microsoft.com/en-us/entra/fundamentals/whats-new`;
+      const announcedDate = monthHeaderToISO(currentMonth);
 
       // Derive category -- prefer explicit Type field
       const typeLower = typeVal.toLowerCase();
@@ -592,7 +875,16 @@ function parseWhatsNewMarkdown(markdown) {
 
       // Extract deadline from CONTENT ONLY -- never from currentMonth (pub date != deadline)
       const contentText = `${title} ${description}`;
-      const deadline    = extractDeadline(contentText, category);
+      const dl = extractDeadline(contentText, category, announcedDate);
+
+      // Tier A when Microsoft labelled the entry with a **Type:** block
+      // (structured metadata), even if that value isn't in TYPE_TO_CATEGORY.
+      // Tier B (keyword-heuristic) when the entry has no Type: field at all
+      // and category was derived from body text -- still official
+      // whats-new.md content, just without structured metadata to point to.
+      const evidence = typeVal
+        ? buildEvidence('A', 'ms-type-field', `Type: ${typeVal}`, link)
+        : buildEvidence('B', 'keyword-heuristic', classificationQuote(category, contentText), link);
 
       const namespace = isExternalId(title, serviceCategory) ? 'external-id' : 'entra-id';
 
@@ -601,26 +893,30 @@ function parseWhatsNewMarkdown(markdown) {
       // (The deadline gate is NOT applied here -- it was causing 85->28 drop by excluding
       //  all GA/Preview feature announcements that have no hard retirement deadline.)
 
-      const status  = deriveStatus(deadline);
+      const status  = deriveStatus(dl.deadline);
       const impact  = deriveImpact(category, contentText);
-      const days    = daysUntilUTC(deadline);
+      const days    = daysUntilUTC(dl.deadline);
 
       results.push({
-        id:            makeId(title),
+        id:            makeId('entra-whatsnew-md', link, title),
         title,
         description,
-        link:          `https://learn.microsoft.com/en-us/entra/fundamentals/whats-new`,
+        link,
         pubDate:       currentMonth,
         category,
         status,
         impact,
-        deadline:      deadline ? deadline.toISOString().split('T')[0] : null,
-        daysRemaining: days,
+        deadline:            dl.deadline ? dl.deadline.toISOString().split('T')[0] : null,
+        daysRemaining:       days,
+        deadlineConfidence:  dl.deadlineConfidence,
+        deadlineEvidence:    dl.deadlineEvidence,
+        deadlinePrecision:   dl.deadlinePrecision,
+        evidence,
         source:        'entra-whatsnew-md',
         namespace,
         serviceCategory,
         articleUrl:    null,
-        announcedDate: monthHeaderToISO(currentMonth),
+        announcedDate,
       });
       continue; // i already advanced inside the inner loop
     }
@@ -661,33 +957,42 @@ function parseDocsChangelog(markdown, sourceLabel, namespace, subtype, linkBase)
     const cleanRel = rawLink.replace(/^(\.\.?\/)+/, '').replace(/\.md($|#)/, '$1');
     const link = rawLink.startsWith('http') ? rawLink : base + cleanRel;
 
-    const fullText = `${title} ${description} ${section}`;
-    const category = classifyByKeyword(title, description);
-    const deadline = extractDeadline(fullText, category);
+    const fullText     = `${title} ${description} ${section}`;
+    const category     = classifyByKeyword(title, description);
+    const announcedDate = monthHeaderToISO(section);
+    const dl           = extractDeadline(fullText, category, announcedDate);
 
     // Docs changelogs: only keep retirements, breaking, and previews -- skip plain updates
     if (category === 'new_feature') continue;
 
-    const status = deriveStatus(deadline);
-    const impact = deriveImpact(category, fullText);
-    const days   = daysUntilUTC(deadline);
+    const status  = deriveStatus(dl.deadline);
+    const impact  = deriveImpact(category, fullText);
+    const days    = daysUntilUTC(dl.deadline);
+    const displayTitle = `[${subtype}] ${title}`;
+    // Tier B: official documentation changelog content, no structured
+    // **Type:** metadata block -- classification is always keyword-based here.
+    const evidence = buildEvidence('B', 'doc-callout', classificationQuote(category, fullText), link);
 
     results.push({
-      id:            makeId(`${subtype}:${title}`),
-      title:         `[${subtype}] ${title}`,
+      id:            makeId(sourceLabel, link, displayTitle),
+      title:         displayTitle,
       description,
       link,
       pubDate:       section,
       category,
       status,
       impact,
-      deadline:      deadline ? deadline.toISOString().split('T')[0] : null,
-      daysRemaining: days,
+      deadline:            dl.deadline ? dl.deadline.toISOString().split('T')[0] : null,
+      daysRemaining:       days,
+      deadlineConfidence:  dl.deadlineConfidence,
+      deadlineEvidence:    dl.deadlineEvidence,
+      deadlinePrecision:   dl.deadlinePrecision,
+      evidence,
       source:        sourceLabel,
       namespace,
       subtype,
       articleUrl:    null,
-      announcedDate: monthHeaderToISO(section),
+      announcedDate,
     });
   }
 
@@ -721,14 +1026,20 @@ function parseFSLogixDocs(html) {
     blocks.push(m[0].trim());
   }
 
+  const link = 'https://learn.microsoft.com/en-us/fslogix/overview-release-notes';
+
   for (const text of blocks) {
     // Determine category first (breaking vs preview)
     const category = /action required|breaking|will fail|must|before.*update/i.test(text) ? 'breaking' : 'preview';
 
+    // announcedDate is unknown for this source (page has no per-callout
+    // date), so the scorer's "same month as announcedDate" negative signal
+    // never fires here -- fine, the other signals still apply.
+    const dl = extractDeadline(text, category, null);
+
     // Only keep items with a deadline date OR explicit breaking language
-    const hasDeadline = extractDeadline(text, category) !== null;
     const hasActionLang = /action required|upcoming change|breaking|will fail|access issues|disruption|must upgrade|before.*update/i.test(text);
-    if (!hasDeadline && !hasActionLang) continue;
+    if (!dl.deadline && !hasActionLang) continue;
 
     const firstSentence = text.split(/\.\s/)[0].slice(0, 120);
     const title = `[FSLogix] ${firstSentence}`;
@@ -736,21 +1047,27 @@ function parseFSLogixDocs(html) {
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const deadline = extractDeadline(text, category);
-    const status    = deriveStatus(deadline);
-    const days      = daysUntilUTC(deadline);
+    const status = deriveStatus(dl.deadline);
+    const days   = daysUntilUTC(dl.deadline);
+    // Tier B, basis doc-callout: this parser IS the FSLogix-callout example
+    // given in the work order's own tier-B definition.
+    const evidence = buildEvidence('B', 'doc-callout', text.split(/\.\s/)[0].slice(0, 240), link);
 
     results.push({
-      id:            makeId(title),
+      id:            makeId('fslogix-docs', link, title),
       title,
       description:   text.slice(0, 600),
-      link:          'https://learn.microsoft.com/en-us/fslogix/overview-release-notes',
+      link,
       pubDate:       'FSLogix Docs',
       category,
       status,
       impact:        'high',
-      deadline:      deadline ? deadline.toISOString().split('T')[0] : null,
-      daysRemaining: days,
+      deadline:            dl.deadline ? dl.deadline.toISOString().split('T')[0] : null,
+      daysRemaining:       days,
+      deadlineConfidence:  dl.deadlineConfidence,
+      deadlineEvidence:    dl.deadlineEvidence,
+      deadlinePrecision:   dl.deadlinePrecision,
+      evidence,
       source:        'fslogix-docs',
       namespace:     'entra-id',
       serviceCategory: 'Azure Files / FSLogix',
@@ -812,17 +1129,20 @@ function transformRSSItems(raw) {
 
     const text     = `${item.title} ${item.description}`;
     const category = classifyByKeyword(item.title, item.description);
-    const deadline = extractDeadline(text, category);
-    const status   = deriveStatus(deadline);
+    const announcedDate = pubDateToISO(item.pubDate);
+    const dl       = extractDeadline(text, category, announcedDate);
+    const status   = deriveStatus(dl.deadline);
     const impact   = deriveImpact(category, text);
-    const days     = daysUntilUTC(deadline);
+    const days     = daysUntilUTC(dl.deadline);
     const namespace = isExternalId(item.title, '') ? 'external-id' : 'entra-id';
+    // Editorially curated blog content, no structured metadata -> tier B.
+    const evidence = buildEvidence('B', 'keyword-heuristic', classificationQuote(category, text), item.link);
 
     // Tech Community Entra blog is editorially curated -- include all posts.
     // Items with explicit dates get proper deadline status; others show as informational.
 
     results.push({
-      id:            makeId(item.title),
+      id:            makeId('techcommunity', item.link, item.title),
       title:         item.title,
       description:   item.description,
       link:          item.link,
@@ -830,12 +1150,16 @@ function transformRSSItems(raw) {
       category,
       status,
       impact,
-      deadline:      deadline ? deadline.toISOString().split('T')[0] : null,
-      daysRemaining: days,
+      deadline:            dl.deadline ? dl.deadline.toISOString().split('T')[0] : null,
+      daysRemaining:       days,
+      deadlineConfidence:  dl.deadlineConfidence,
+      deadlineEvidence:    dl.deadlineEvidence,
+      deadlinePrecision:   dl.deadlinePrecision,
+      evidence,
       source:        'techcommunity',
       namespace,
       articleUrl:    null,
-      announcedDate: pubDateToISO(item.pubDate),
+      announcedDate,
     });
   }
   return results;
@@ -868,18 +1192,27 @@ function parseExternalIdCommits(jsonText) {
     const announcedDate = ((commit.commit.author && commit.commit.author.date) || '').split('T')[0] || null;
     const title    = `[External ID Docs] ${msg}`;
     const category = classifyByKeyword(title, msg);
+    const link     = commit.html_url || '';
+    // Tier C: a repo signal that a document moved, not an announcement --
+    // this source exists specifically to surface how-tos BEFORE Microsoft
+    // adds them to the curated changelog.
+    const evidence = buildEvidence('C', 'repo-signal', msg.slice(0, 240), link);
 
     results.push({
-      id:            makeId(`eic:${msg}`),
+      id:            makeId('external-id-commits', link, title),
       title,
       description:   msg,
-      link:          commit.html_url || '',
+      link,
       pubDate:       announcedDate || '',
       category,
       status:        'green',
       impact:        'low',
-      deadline:      null,
-      daysRemaining: null,
+      deadline:            null,
+      daysRemaining:       null,
+      deadlineConfidence:  null,
+      deadlineEvidence:    null,
+      deadlinePrecision:   null,
+      evidence,
       source:        'external-id-commits',
       namespace:     'external-id',
       articleUrl:    null,
@@ -934,37 +1267,46 @@ function parseGraphChangelog(xml) {
 
     const pub           = (block.match(/<pubDate>(.*?)<\/pubDate>/i) || [])[1] || '';
     const announcedDate = pubDateToISO(pub);
-    // The filter guarantees deprecation semantics, so treat as retirement -- this
-    // also lets extractDeadline (rule A) capture a date stated later in the block.
+    // The filter guarantees deprecation semantics, so treat as retirement --
+    // this also puts it through the retirement/breaking tie-break rule
+    // (latest qualifying future date wins) in the scorer.
     const category      = 'retirement';
-    const deadline      = extractDeadline(desc, category);
+    const link           = 'https://developer.microsoft.com/en-us/graph/changelog/';
+    const dl            = extractDeadline(desc, category, announcedDate);
 
     // Keep only actionable items: a real deadline, or announced within the last
     // year. Drops ancient already-completed deprecations that carry no future date.
     const recent = announcedDate &&
       (nowMs - new Date(announcedDate + 'T00:00:00Z').getTime()) <= 366 * 86400000;
-    if (!deadline && !recent) continue;
+    if (!dl.deadline && !recent) continue;
 
     const title = `[Graph API] ${firstSentence.slice(0, 130)}`;
     const key = title.toLowerCase().slice(0, 60);
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const status    = deriveStatus(deadline);
-    const days      = daysUntilUTC(deadline);
+    const status    = deriveStatus(dl.deadline);
+    const days      = daysUntilUTC(dl.deadline);
     const namespace = isExternalId(desc, '') ? 'external-id' : 'entra-id';
+    // Tier A: the Graph changelog's own deprecation-sentence structure is
+    // itself the structured metadata (this is the work order's own example).
+    const evidence = buildEvidence('A', 'graph-changelog', firstSentence.slice(0, 240), link);
 
     results.push({
-      id:            makeId(`graph:${title}`),
+      id:            makeId('graph-changelog', link, title),
       title,
       description:   desc.slice(0, 600),
-      link:          'https://developer.microsoft.com/en-us/graph/changelog/',
+      link,
       pubDate:       pub,
       category,
       status,
       impact:        'high',
-      deadline:      deadline ? deadline.toISOString().split('T')[0] : null,
-      daysRemaining: days,
+      deadline:            dl.deadline ? dl.deadline.toISOString().split('T')[0] : null,
+      daysRemaining:       days,
+      deadlineConfidence:  dl.deadlineConfidence,
+      deadlineEvidence:    dl.deadlineEvidence,
+      deadlinePrecision:   dl.deadlinePrecision,
+      evidence,
       source:        'graph-changelog',
       namespace,
       articleUrl:    null,
@@ -1127,10 +1469,14 @@ async function buildTrackerData(prevItems) {
     return ageDays <= horizon;
   });
 
-  const diffed = applyDiff(capped, prevItems);
-  // cold start: no prior snapshot, or prior snapshot predates firstSeen field
+  // cold start: no prior snapshot, or prior snapshot predates firstSeen field.
+  // Computed BEFORE the diff (not after, as before Phase 1) because applyDiff
+  // needs it to decide how to seed firstSeen when no prior match is found --
+  // see the 2026-08-14 cold-start incident (PR #22) that flattened every
+  // item's firstSeen to one date; this is the repair for that failure mode.
   const coldStart = !prevItems || prevItems.length === 0
                     || !prevItems.some(i => i.firstSeen);
+  const diffed = applyDiff(capped, prevItems, coldStart);
   const newCount = coldStart ? 0 : diffed.filter(i => i.isNew).length;
 
   const externalIdCount = diffed.filter(i => i.namespace === 'external-id').length;
@@ -1332,6 +1678,18 @@ export {
   mergeCrossSource,
   twoStageDedupe,
   extractDeadline,
+  collectDateCandidates,
   classifyByKeyword,
+  classificationQuote,
+  buildEvidence,
+  evidenceTierRank,
   makeId,
+  fnv1a,
+  applyDiff,
+  parseWhatsNewMarkdown,
+  parseDocsChangelog,
+  parseFSLogixDocs,
+  parseGraphChangelog,
+  parseExternalIdCommits,
+  toRSS,
 };
