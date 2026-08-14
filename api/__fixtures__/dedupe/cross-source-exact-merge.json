@@ -1,0 +1,32 @@
+[
+  {
+    "id": "bbbb1111",
+    "title": "Passkey support for External ID",
+    "description": "Entra External ID now supports passkey sign-in for customer tenants.",
+    "link": "https://learn.microsoft.com/en-us/entra/fundamentals/whats-new",
+    "pubDate": "April 2026",
+    "category": "new_feature",
+    "status": "green",
+    "impact": "low",
+    "deadline": null,
+    "daysRemaining": null,
+    "source": "entra-whatsnew-md",
+    "namespace": "external-id",
+    "announcedDate": "2026-04-01"
+  },
+  {
+    "id": "bbbb2222",
+    "title": "[External ID] Passkey support for External ID",
+    "description": "Doc update: New articles",
+    "link": "https://learn.microsoft.com/en-us/entra/external-id/how-to-passkey.md",
+    "pubDate": "April 2026",
+    "category": "new_feature",
+    "status": "green",
+    "impact": "low",
+    "deadline": null,
+    "daysRemaining": null,
+    "source": "external-id-docs",
+    "namespace": "external-id",
+    "announcedDate": "2026-04-01"
+  }
+]

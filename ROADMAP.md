@@ -18,6 +18,15 @@
   `?refresh=1` gated behind a `REFRESH_TOKEN` secret; dedup keyed on the full normalised
   title scoped by source (was a 60-char prefix, which collided) with a `dedupeDropped`
   counter surfaced in the envelope.
+- [x] Two-stage dedupe (Phase 0.1) -- Phase 0's source-scoped dedupe correctly stopped
+  distinct items colliding but also stopped the SAME change (reported by more than one
+  Microsoft source) from being merged, so items in both `whats-new.md` and a docs
+  changelog started appearing twice. Restored cross-source merging as its own stage:
+  intra-source exact dedupe (`dedupeDropped`) is now separate from cross-source merge
+  (`crossSourceMerged`), which adds `sources: []`/`links: []` to merged items and ranks
+  sources by provenance to decide which one's fields survive. `external-id-commits`
+  items are exempt from cross-source merging in both directions. First fixture-tested
+  logic in the repo (`api/worker.test.js`, `api/__fixtures__/dedupe/`).
 
 ## Planned
 

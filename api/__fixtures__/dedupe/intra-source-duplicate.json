@@ -1,0 +1,32 @@
+[
+  {
+    "id": "aaaa1111",
+    "title": "Conditional Access authentication strength enforcement",
+    "description": "Admins must configure an authentication strength for high-risk sign-ins.",
+    "link": "https://learn.microsoft.com/en-us/entra/fundamentals/whats-new",
+    "pubDate": "March 2026",
+    "category": "new_feature",
+    "status": "green",
+    "impact": "medium",
+    "deadline": null,
+    "daysRemaining": null,
+    "source": "entra-whatsnew-md",
+    "namespace": "entra-id",
+    "announcedDate": "2026-03-01"
+  },
+  {
+    "id": "aaaa2222",
+    "title": "Conditional Access - authentication strength enforcement!",
+    "description": "Duplicate parse of the same H3 block (e.g. a stray re-scan).",
+    "link": "https://learn.microsoft.com/en-us/entra/fundamentals/whats-new",
+    "pubDate": "March 2026",
+    "category": "new_feature",
+    "status": "green",
+    "impact": "medium",
+    "deadline": null,
+    "daysRemaining": null,
+    "source": "entra-whatsnew-md",
+    "namespace": "entra-id",
+    "announcedDate": "2026-03-01"
+  }
+]

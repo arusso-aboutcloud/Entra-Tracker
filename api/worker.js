@@ -324,6 +324,137 @@ function makeId(title) {
   return ('00000000' + h.toString(16)).slice(-8);
 }
 
+// ── TWO-STAGE DEDUPE ─────────────────────────────────────────────────────────
+// Stage 1 collapses identical titles repeated within one source (rare -- a
+// real parser bug, not routine). Stage 2 merges the SAME Microsoft change as
+// reported by more than one source (routine -- e.g. whats-new.md and a docs
+// changelog both cover it). These are different phenomena with different
+// expected frequencies, so they get separate counters: dedupeDropped (stage 1)
+// and crossSourceMerged (stage 2).
+
+// Until Phase 1 lands evidence tiers, rank sources by how authoritative/
+// structured their provenance is. The winner of a merge supplies id, title,
+// category, status, impact, namespace, etc.; the loser only contributes to
+// sources[]/links[] and backfills null deadline/announcedDate.
+const CROSS_SOURCE_RANK = {
+  'entra-whatsnew-md':   0,
+  'graph-changelog':     1,
+  'external-id-docs':    2,
+  'b2c-docs':            2,
+  'fslogix-docs':        3,
+  'external-id-commits': 4,
+};
+function sourceRank(source) {
+  return CROSS_SOURCE_RANK[source] ?? 99;
+}
+
+// Token-set Jaccard similarity on normalised titles. 0..1. Used only for the
+// cross-source near-duplicate path (exact-match is checked separately and
+// doesn't need this).
+function titleSimilarity(a, b) {
+  const ta = new Set(normalizeTitleForDedup(a).split(' ').filter(Boolean));
+  const tb = new Set(normalizeTitleForDedup(b).split(' ').filter(Boolean));
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let intersection = 0;
+  for (const w of ta) if (tb.has(w)) intersection++;
+  const union = ta.size + tb.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+// High bar on purpose: this is the only thing standing between "same change,
+// worded differently by two sources" and "two different changes about the
+// same feature area getting silently welded together". False negatives (a
+// missed merge -> a duplicate card) are far cheaper than false positives (a
+// bad merge -> a real distinct item silently disappearing).
+const CROSS_SOURCE_SIMILARITY_THRESHOLD = 0.82;
+
+// Absolute difference in months between two "yyyy-mm-dd"/"yyyy-mm-01" dates,
+// or null if either is missing (near-duplicate matching requires both).
+function monthDiff(dateA, dateB) {
+  if (!dateA || !dateB) return null;
+  const [ya, ma] = dateA.split('-').map(Number);
+  const [yb, mb] = dateB.split('-').map(Number);
+  if (!ya || !ma || !yb || !mb) return null;
+  return Math.abs((ya * 12 + (ma - 1)) - (yb * 12 + (mb - 1)));
+}
+
+// Stage 1: intra-source exact dedupe -- collapse items whose normalised title
+// is identical WITHIN the same source. Returns the survivors plus a count of
+// how many were dropped.
+function dedupeIntraSource(items) {
+  const kept = [];
+  const seen = new Set();
+  let dropped = 0;
+  for (const item of items) {
+    const key = `${item.source}:${normalizeTitleForDedup(item.title)}`;
+    if (seen.has(key)) { dropped++; continue; }
+    seen.add(key);
+    kept.push(item);
+  }
+  return { items: kept, dedupeDropped: dropped };
+}
+
+// Stage 2: cross-source merge -- the SAME change reported by more than one
+// Microsoft source becomes one item, carrying sources[]/links[] listing every
+// contributor. external-id-commits items are exempt in both directions (never
+// absorbed into another source's item, never absorb one) -- they are how-to
+// docs surfaced ahead of the curated changelog, not the same announcement.
+function mergeCrossSource(items) {
+  const survivors = [];
+  let crossSourceMerged = 0;
+
+  for (const item of items) {
+    let matchIdx = -1;
+
+    if (item.source !== 'external-id-commits') {
+      for (let i = 0; i < survivors.length; i++) {
+        const candidate = survivors[i];
+        if (candidate.source === 'external-id-commits') continue;
+        if (candidate.source === item.source) continue; // stage 1 already handled same-source
+
+        const exact = normalizeTitleForDedup(candidate.title) === normalizeTitleForDedup(item.title);
+        const near  = !exact
+          && titleSimilarity(candidate.title, item.title) >= CROSS_SOURCE_SIMILARITY_THRESHOLD
+          && (monthDiff(candidate.announcedDate, item.announcedDate) ?? Infinity) <= 1;
+
+        if (exact || near) { matchIdx = i; break; }
+      }
+    }
+
+    if (matchIdx === -1) {
+      survivors.push({ ...item, sources: [item.source], links: [item.link].filter(Boolean) });
+      continue;
+    }
+
+    crossSourceMerged++;
+    const existing = survivors[matchIdx];
+    const winnerIsIncoming = sourceRank(item.source) < sourceRank(existing.source);
+    const base  = winnerIsIncoming ? item : existing;
+    const other = winnerIsIncoming ? existing : item;
+
+    survivors[matchIdx] = {
+      ...base,
+      sources:       Array.from(new Set([...existing.sources, item.source])),
+      links:         Array.from(new Set([...existing.links, item.link].filter(Boolean))),
+      deadline:      base.deadline ?? other.deadline,
+      daysRemaining: base.deadline ? base.daysRemaining : other.daysRemaining,
+      status:        base.deadline ? base.status        : other.status,
+      announcedDate: base.announcedDate ?? other.announcedDate,
+    };
+  }
+
+  return { items: survivors, crossSourceMerged };
+}
+
+function twoStageDedupe(allItems) {
+  const stage1 = dedupeIntraSource(allItems);
+  const stage2 = mergeCrossSource(stage1.items);
+  return {
+    items:            stage2.items,
+    dedupeDropped:    stage1.dedupeDropped,
+    crossSourceMerged: stage2.crossSourceMerged,
+  };
+}
+
 // ── CSV HELPER ──────────────────────────────────────────────────────────────
 function toCSV(items) {
   const COLS = ['title','category','impact','status','announcedDate','firstSeen','deadline','daysRemaining','namespace','link'];
@@ -973,21 +1104,12 @@ async function buildTrackerData(prevItems) {
     return 0;
   });
 
-  // Deduplicate on the full normalised title, scoped by source. A 60-char
-  // prefix key previously collapsed distinct entries sharing a long common
-  // prefix; the full title fixes that. Scoping by source means the same
-  // title from two different sources is kept as two items (they're
-  // different reportings of it), matching the previous external-id-commits
-  // carve-out but now applied uniformly instead of as a special case.
-  const deduped = [];
-  const seen    = new Set();
-  let dedupeDropped = 0;
-  for (const item of allItems) {
-    const key = `${item.source}:${normalizeTitleForDedup(item.title)}`;
-    if (seen.has(key)) { dedupeDropped++; continue; }
-    seen.add(key);
-    deduped.push(item);
-  }
+  // Two-stage dedupe: stage 1 collapses exact repeats within one source
+  // (dedupeDropped); stage 2 merges the same change reported by more than
+  // one source into a single item with sources[]/links[] (crossSourceMerged).
+  // See twoStageDedupe() for the external-id-commits carve-out and the
+  // source-rank tiebreak used to pick each merge's surviving fields.
+  const { items: deduped, dedupeDropped, crossSourceMerged } = twoStageDedupe(allItems);
 
   // Retention: keep the feed bounded and relevance-decayed.
   //  - Dated items: drop once the deadline is >DEADLINE_RETENTION_DAYS in the past
@@ -1020,6 +1142,7 @@ async function buildTrackerData(prevItems) {
     newCount,
     coldStart,
     dedupeDropped,
+    crossSourceMerged,
     sources: {
       'whats-new-md':        countWN,
       'fslogix-docs':        countFS,
@@ -1192,4 +1315,23 @@ export default {
       } catch (err) { console.error('Cron:', err.message); }
     })());
   },
+};
+
+// ── TEST-ONLY EXPORTS ────────────────────────────────────────────────────────
+// Named exports alongside the default {fetch, scheduled} export. Wrangler
+// deploys only the default export's handlers, so these add nothing to the
+// deployed bundle -- they exist so api/worker.test.js can unit-test internal
+// logic (dedupe/merge, date parsing, classification) without a live network
+// fetch or a KV binding.
+export {
+  normalizeTitleForDedup,
+  titleSimilarity,
+  monthDiff,
+  sourceRank,
+  dedupeIntraSource,
+  mergeCrossSource,
+  twoStageDedupe,
+  extractDeadline,
+  classifyByKeyword,
+  makeId,
 };
