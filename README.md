@@ -115,6 +115,9 @@ new logic took over.
 ### `GET /`
 Returns full article catalog with metadata.
 
+### `GET /taxonomy`
+Returns the single service taxonomy definition (`{ taxonomy: [{ id, name }, ...] }`) that every item's `serviceCategory` is classified against, and that the frontend's service-area dropdown and `/methodology` coverage statement both read from. No auth, cache-only (static in-memory structure — never touches KV or triggers an upstream fetch), always available regardless of cache state.
+
 **Query parameters:**
 
 | Parameter | Values | Description |
@@ -148,6 +151,10 @@ Returns full article catalog with metadata.
 
 **Threshold note:** the cross-source merge similarity threshold (0.82, Phase 0.1) has only ever fired on hand-built fixtures — `crossSourceMerged` has been 0 against live data every time it's been checked so far. The first time it fires for real, the merge should be spot-checked before being trusted; don't tune the threshold without that evidence.
 
+**Service taxonomy (`serviceCategory`, `serviceCategories[]`, `unmatched`, `unmatchedSamples`):** every item is now classified against a single, fixed taxonomy (`GET /taxonomy`) instead of each mechanism (External ID detection, the Graph changelog relevance filter, per-parser assumptions) carrying its own scoping logic. `serviceCategory` is **overwritten** with the taxonomy's canonical name for the item's primary match — this normalises Microsoft's raw, inconsistent category strings (`whats-new.md` alone used 30+ of them) into one fixed vocabulary; the field's type/format is unchanged (still a string), only its value changed for most items. The additive `serviceCategories: []` records every taxonomy entry the item matches, not just the primary. An item matching **no** taxonomy entry is dropped, never silently: the envelope's `unmatched: { <source>: N }` counts drops per source, and `unmatchedSamples: []` (capped at 10 total) keeps `{title, source}` so the taxonomy can be extended from evidence. Classification is two-tier: Microsoft's own raw `**Service category:**` field (whats-new.md only) decides the primary when present (authoritative); title/description text only decides it when there's no raw category to go on. See `api/__fixtures__/taxonomy/README.md` for the full raw→canonical mapping and three real classification bugs found and fixed while building this (short version: plain substring matching is dangerous — `signin` matched inside `assigning`, `provisioning` matched inside `cloudPcProvisioningPolicy`).
+
+**Note on primary vs. secondary categorisation:** because the raw-category match always wins primary when present, an item can have a more *specific* topic than its primary category suggests — e.g. a real live item titled "Workload identity-based authentication for SAP SuccessFactors..." carries Microsoft's own raw category "Provisioning" (→ primary `Entra ID (workforce)`), with `Entra Workload ID` demoted to a secondary entry in `serviceCategories[]` rather than lost. This is a deliberate tradeoff: it's what stops incidental mentions elsewhere in an item's body text from hijacking the primary category, at the cost of sometimes under-representing a more specific real topic in the primary field alone. Check `serviceCategories[]`, not just `serviceCategory`, for the full picture.
+
 ---
 
 ## Data Sources
@@ -161,9 +168,11 @@ All sources are Microsoft-official (MicrosoftDocs GitHub repos + learn.microsoft
 | 3 | `entra-docs: external-id/whats-new-docs.md` | Markdown | External ID docs changelog (`- [Title](url)` bullets) |
 | 4 | `azure-docs: active-directory-b2c/whats-new-docs.md` | Markdown | B2C docs changelog (B2C is end-of-sale; winding down) |
 | 5 | `entra-docs: commits — external-id/customers` | GitHub Commits API | External ID customer how-tos (direct repo watch, pre-changelog) — catches passkey/FIDO2 guides before MS adds them to the curated index |
-| 6 | `developer.microsoft.com: Graph changelog` | RSS | Microsoft Graph API resource/endpoint **deprecations** (e.g. the PIM iteration 2 API retirement). The feed is a 2500+ item firehose, so it is filtered to Entra-relevant resource/API-level deprecations only (headline-sentence match + recency/deadline gate) — typically 1–3 high-signal items. |
+| 6 | `developer.microsoft.com: Graph changelog` | RSS | Microsoft Graph API resource/endpoint **deprecations** (e.g. the PIM iteration 2 API retirement). The feed is a 2500+ item firehose, so it is filtered to items with deprecation language whose content matches the service taxonomy (see below) — typically 1–3 high-signal items. |
 
 Changelog parsers track raw-entry counts; if a source matches zero entries the API response includes a `warnings[]` entry so upstream format drift surfaces instead of failing silently.
+
+The Graph changelog's Entra-relevance filter (previously a bespoke `GRAPH_ENTRA_RE` regex) now consumes the same taxonomy definition as everything else (`matchesAnyTaxonomyEntry` — see the Service Categories section below).
 
 ---
 
@@ -178,7 +187,7 @@ Changelog parsers track raw-entry counts; if a source matches zero entries the A
 - **Updated** — documentation updates
 
 ### Service Categories
-Tracked per item based on Microsoft's own categorization (Entra ID Protection, Conditional Access, External ID, B2C, etc.).
+Every item is classified against a single service taxonomy (14 entries — Conditional Access, Privileged Identity Management, Identity Protection, Entra ID Governance, Global Secure Access, Entra Workload ID, Entra Verified ID, Entra Domain Services, Entra Connect and Cloud Sync, Authentication methods, Microsoft Graph identity APIs, Microsoft identity platform / MSAL, Entra External ID / Azure AD B2C, and the broad Entra ID (workforce) catch-all), exposed at `GET /taxonomy` and readable in the web UI's `/methodology` coverage statement and service-area filter dropdown. Replaces the old per-mechanism scoping (a bespoke Graph-changelog regex, standalone External ID keyword lists, Microsoft's own 30+ raw `whats-new.md` category strings shown as-is). See the API section above for the full field semantics and `api/__fixtures__/taxonomy/README.md` for the raw→canonical mapping table.
 
 ### Evidence Tiers
 Every item also carries a Tier A/B/C badge recording how strong Microsoft's own signal was for its classification — see the `evidence` field above, or the `/methodology` section in the web UI for the plain-language version aimed at Entra admins rather than developers.
@@ -189,7 +198,7 @@ Every item also carries a Tier A/B/C badge recording how strong Microsoft's own 
 
 - 🔍 Full-text search — across title, description, category, type
 - 🏷️ Type filters — Preview, GA, Retirement, Breaking Change, Plan for Change
-- 📂 Service category pills — filter by Entra service area
+- 📂 Service area filter — dropdown sourced live from `GET /taxonomy`, filters independently of the type filter above (e.g. "Conditional Access" + "Breaking" together). This line previously described "pills" that, as of the Phase 2 audit, did not actually exist in the code — corrected here to describe what's actually implemented (a `<select>`, not a pill row) rather than perpetuating the stale claim.
 - 📅 Date range picker — scope by time period
 - 📊 Stats bar — total items, breakdown by type
 - 🔗 Crosslinks to aboutcloud.io and entraerrors.aboutcloud.io
@@ -200,7 +209,7 @@ Every item also carries a Tier A/B/C badge recording how strong Microsoft's own 
 - 📡 Subscribe / Export — popover button surfacing RSS feeds (full and External ID), CSV export, and JSON API with one-click copy-to-clipboard for pasting into RSS readers, Teams, Power Automate, and spreadsheets
 - 🅰️ Evidence tier badge (Tier A/B/C) on every card — how strong Microsoft's own signal was; see the `/methodology` section for what each tier means
 - ⏳ Deadline confidence hedge — cards with an `'inferred'`-confidence deadline show the date plainly ("possible date … unconfirmed") instead of a countdown, since a countdown implies more certainty than the source text actually supports
-- 📊 Methodology section — collapsible, plain-language explanation of evidence tiers and deadline confidence, written for an Entra admin rather than a developer
+- 📊 Methodology section — collapsible, plain-language explanation of evidence tiers and deadline confidence, written for an Entra admin rather than a developer; now also includes a coverage statement listing every service area the tracker covers, sourced from the same taxonomy as the filter dropdown
 
 ---
 
@@ -214,7 +223,8 @@ Every item also carries a Tier A/B/C badge recording how strong Microsoft's own 
 │   │   ├── dedupe/       # Item-level fixtures (dedupe/merge logic, Phase 0.1)
 │   │   ├── deadline/     # Real captured Microsoft text (deadline scoring, Phase 1)
 │   │   ├── identity/     # Real title-rewording cases (item identity, Phase 1)
-│   │   └── evidence/     # Cross-source tier-ranking fixture (Phase 1)
+│   │   ├── evidence/     # Cross-source tier-ranking fixture (Phase 1)
+│   │   └── taxonomy/     # Real classification fixtures + raw->canonical mapping (Phase 2)
 │   ├── package.json      # type:module marker for the test runner (no deps)
 │   └── wrangler.toml     # Worker configuration
 ├── web/                  # Pages frontend

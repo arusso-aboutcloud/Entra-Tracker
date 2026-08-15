@@ -56,6 +56,26 @@
 - [x] Frontend: Tier A/B/C badge on every card, no countdown for `inferred`-confidence
   deadlines (shown as a hedged date instead), and a `/methodology` section explaining
   tiers and confidence levels for an Entra admin audience.
+- [x] Service taxonomy (Phase 2) -- centralised the scoping logic that used to live
+  separately in `GRAPH_ENTRA_RE`, `EXTERNAL_ID_SERVICE_CATEGORIES`/`EXTERNAL_ID_TITLE_KEYWORDS`
+  (the constants referenced above, now folded into `SERVICE_TAXONOMY`'s `entra-external-id`
+  entry), and Microsoft's own 30+ raw `whats-new.md` category strings shown as-is, into
+  one 14-entry taxonomy exposed at `GET /taxonomy`. Every item now gets a normalised
+  `serviceCategory` (canonical name) plus an additive `serviceCategories: []` of every
+  match. An item matching nothing is dropped and counted (`unmatched`/`unmatchedSamples`
+  on the envelope) rather than silently disappearing. Verified against a fresh live
+  fetch of all 5 sources: **zero items dropped**, `namespace` assignment byte-for-byte
+  unchanged, 99 of 105 items' `serviceCategory` string changed (expected -- the
+  normalisation this phase exists to do; see `api/__fixtures__/taxonomy/README.md` for
+  the full mapping). Classification building surfaced and fixed three real bugs from
+  naive substring matching (`signin` inside `assigning`, `provisioning` inside
+  `cloudPcProvisioningPolicy`, and incidental in-body mentions of unrelated features
+  outranking an item's real Microsoft-assigned category) -- documented in the same
+  fixture README as regression guards. Frontend: a service-area filter dropdown
+  (`web/index.html`, sourced live from `GET /taxonomy`) and a `/methodology` coverage
+  statement -- the README previously advertised "service category pills" that, on
+  inspection, did not exist in the code; this is the actual first implementation,
+  flagged as a correction rather than silently built over the stale claim.
 
 ## Planned
 
