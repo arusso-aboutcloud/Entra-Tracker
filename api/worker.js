@@ -95,28 +95,251 @@ const CANDIDATE_FEEDS = [
   ]},
 ];
 
-// ── EXTERNAL ID DETECTION ──────────────────────────────────────────────────
-const EXTERNAL_ID_SERVICE_CATEGORIES = [
-  'b2c', 'external id', 'external-id', 'ciam', 'consumer identity',
-  'b2b', 'b2b collaboration', 'b2b direct connect', 'cross-tenant',
-  'workforce and external',
+// ── SERVICE TAXONOMY ─────────────────────────────────────────────────────────
+// The single definition of what this tracker covers, and the vocabulary its
+// service-category output is normalised against. Everything that used to be
+// bespoke per-mechanism term lists (EXTERNAL_ID_SERVICE_CATEGORIES/
+// EXTERNAL_ID_TITLE_KEYWORDS, GRAPH_ENTRA_RE) now derives from this.
+//
+// Ordered most-specific first, broadest last, used as the Tier-2 (title/
+// description) tiebreak in classifyTaxonomy() -- 'entra-id-workforce' is
+// deliberately last, since it's the broad workforce/administrative
+// catch-all (audit, RBAC, reporting, user/group management, etc.) that
+// most generic whats-new.md categories fall into when nothing more
+// specific matches. Array order does NOT decide primary classification
+// when a real Microsoft serviceCategory is available -- see the two-tier
+// design in classifyTaxonomy() below.
+//
+// `serviceCategoryTerms` match against the raw Microsoft **Service
+// category:** string (whats-new.md only) -- see classifyTaxonomy()'s Tier 1.
+// `titleTerms` match against title+description -- Tier 2, and also what
+// matchesAnyTaxonomyEntry() (the Graph changelog relevance gate) checks.
+// Every entry needs `titleTerms`; `serviceCategoryTerms` is optional (most
+// entries have no natural raw-category equivalent, e.g. Identity Protection
+// isn't its own whats-new.md category).
+const SERVICE_TAXONOMY = [
+  {
+    id: 'conditional-access',
+    name: 'Conditional Access',
+    serviceCategoryTerms: ['conditional access'],
+    titleTerms: ['conditional access', 'conditionalaccess'],
+  },
+  {
+    id: 'pim',
+    name: 'Privileged Identity Management',
+    serviceCategoryTerms: ['privileged identity management'],
+    titleTerms: ['privileged identity management', 'privileged identity', 'privilegedaccess', ' pim '],
+  },
+  {
+    id: 'identity-protection',
+    name: 'Identity Protection',
+    serviceCategoryTerms: [],
+    titleTerms: ['identity protection', 'identityprotection', 'risky user', 'riskyuser', 'risky sign-in', 'named location', 'namedlocation'],
+  },
+  {
+    id: 'entra-id-governance',
+    name: 'Entra ID Governance',
+    serviceCategoryTerms: ['entitlement management', 'entitlement management, lifecycle workflows', 'lifecycle workflows', 'tenant governance'],
+    titleTerms: ['entitlement management', 'lifecycle workflow', 'access package', 'identity governance', 'tenant governance'],
+  },
+  {
+    id: 'global-secure-access',
+    name: 'Global Secure Access (Private Access / Internet Access)',
+    serviceCategoryTerms: ['internet access', 'private access', 'ios client'],
+    titleTerms: ['global secure access', 'private access', 'internet access', 'gsa '],
+  },
+  {
+    id: 'entra-workload-id',
+    name: 'Entra Workload ID',
+    serviceCategoryTerms: [],
+    titleTerms: ['workload identity', 'workload id', 'federated credential', 'managed identity'],
+  },
+  {
+    id: 'entra-verified-id',
+    name: 'Entra Verified ID',
+    serviceCategoryTerms: [],
+    titleTerms: ['verified id'],
+  },
+  {
+    id: 'entra-domain-services',
+    name: 'Entra Domain Services',
+    serviceCategoryTerms: [],
+    titleTerms: ['domain services'],
+  },
+  {
+    id: 'entra-connect-cloud-sync',
+    name: 'Entra Connect and Cloud Sync',
+    serviceCategoryTerms: ['entra connect', 'microsoft identity manager'],
+    titleTerms: ['entra connect', 'cloud sync', 'azure ad connect', 'identity manager', ' mim '],
+  },
+  {
+    id: 'authentication-methods',
+    name: 'Authentication methods',
+    serviceCategoryTerms: ['authentications (logins)', 'mfa', 'microsoft authenticator app'],
+    titleTerms: ['authentication method', 'authenticationmethod', 'multifactor', ' mfa ', 'mfa ', 'authenticator app',
+      'kerberos', 'certificate-based authentication', 'passwordless'],
+  },
+  {
+    id: 'graph-identity-apis',
+    name: 'Microsoft Graph identity APIs',
+    serviceCategoryTerms: ['ms graph'],
+    // 'signin'/'sign-in' deliberately excluded: 'signin' (no separator, meant
+    // to catch the Graph schema resource name) is a substring of the common
+    // English word "assigning" (as-SIGNIN-g), and hyphenated 'sign-in' is
+    // common Entra prose generally, not specific to Graph API content --
+    // both produced false primary-classification hits in testing against
+    // real whats-new.md text. 'graph api'/'microsoft graph' cover genuine
+    // Graph-relevant items without that risk.
+    titleTerms: ['graph api', 'microsoft graph', 'directoryrole', 'directory role'],
+  },
+  {
+    id: 'identity-platform-msal',
+    name: 'Microsoft identity platform / MSAL',
+    serviceCategoryTerms: [],
+    // 'app registration' deliberately excluded: too generic on its own --
+    // app registrations get mentioned in passing across many unrelated
+    // entries (audit logs, provisioning, etc.), not just identity-platform/
+    // MSAL-specific ones. 'msal'/'identity platform'/'openid connect' are
+    // specific enough to keep.
+    titleTerms: ['msal', 'identity platform', 'openid connect'],
+  },
+  {
+    // Kept deliberately broad and separate from workforce -- this is the only
+    // entry with the field-scoped terms isExternalId() relies on for exact
+    // namespace-assignment parity. See the block comment above.
+    id: 'entra-external-id',
+    name: 'Entra External ID / Azure AD B2C',
+    serviceCategoryTerms: [
+      'b2c', 'external id', 'external-id', 'ciam', 'consumer identity',
+      'b2b', 'b2b collaboration', 'b2b direct connect', 'cross-tenant',
+      'workforce and external',
+    ],
+    titleTerms: [
+      'b2c', 'external id', 'external tenant', 'customer identity',
+      'guest user', 'external user', 'cross-tenant', 'crosstenant', 'b2b',
+      'user flow', 'custom policy', 'identity experience framework',
+      'passkey', 'fido2', 'webauthn', 'native auth', 'native authentication',
+    ],
+  },
+  {
+    // Broadest catch-all, checked LAST. Covers whats-new.md's generic
+    // administrative categories (audit, RBAC, reporting, user/group
+    // management, provisioning, device management, etc.) plus the bare
+    // "Entra"/"Azure AD" mentions that made GRAPH_ENTRA_RE's own catch-all
+    // (`\bentra\b|microsoft entra`) work for the Graph changelog firehose.
+    id: 'entra-id-workforce',
+    name: 'Entra ID (workforce)',
+    serviceCategoryTerms: [
+      'audit', 'byod', 'byod support', 'device access management',
+      'device registration and management', 'entra backup and recovery',
+      'group management', 'modernized my account pages', 'my profile/account',
+      'other', 'provisioning', 'rbac', 'reporting',
+      'user experience and management', 'user management',
+    ],
+    titleTerms: [
+      'entra id', 'azure ad', 'azure active directory', 'microsoft entra', 'entra',
+      'agent id', 'agent registry', 'directory role', 'directoryrole', 'azure ad role',
+    ],
+  },
 ];
 
-// Title-level keywords only -- passkey items use "Authentications (Logins)" service category
-// (a workforce category) so we match by title alone, not service category, to avoid
-// blanket-reclassifying all workforce passkey announcements.
-const EXTERNAL_ID_TITLE_KEYWORDS = [
-  'b2c', 'external id', 'external tenant', 'customer identity',
-  'guest user', 'external user', 'cross-tenant', 'b2b',
-  'user flow', 'custom policy', 'identity experience framework',
-  'passkey', 'fido2', 'webauthn', 'native auth', 'native authentication',
-];
+// Every taxonomy entry an item matches. Returns [] if nothing matches --
+// callers decide what to do with that (buildTrackerData drops the item and
+// counts it).
+//
+// Two-tier, not flat array-order: real Microsoft prose routinely mentions
+// OTHER Entra features in passing inside a body paragraph (e.g. an "Entra
+// Backup and Recovery" entry listing "Conditional Access policies, named
+// locations" among the objects it backs up) -- if every entry's terms were
+// checked against the same combined text with array position as the only
+// tiebreak, those incidental mentions would win primary classification over
+// the entry the item is actually ABOUT. So:
+//   Tier 1: match the raw Microsoft **Service category:** string (whats-new.md
+//           only) against each entry's serviceCategoryTerms. This is
+//           Microsoft's own authoritative categorisation -- when present, it
+//           always decides the primary.
+//   Tier 2: match combined title+description against each entry's
+//           titleTerms. Used for primary when Tier 1 found nothing (every
+//           other source, and any whats-new.md category not in our map).
+// Both tiers' matches are returned (Tier 1 first), so a title/description
+// match still contributes to the additive serviceCategories[] list even
+// when a serviceCategory match wins primary.
+function classifyTaxonomy(title, description, serviceCategory) {
+  const svcCat = (serviceCategory || '').toLowerCase();
+  const text = `${title || ''} ${description || ''}`.toLowerCase();
 
+  const svcMatches   = SERVICE_TAXONOMY.filter(e => (e.serviceCategoryTerms || []).some(t => svcCat.includes(t)));
+  const titleMatches = SERVICE_TAXONOMY.filter(e => (e.titleTerms || []).some(t => text.includes(t)));
+
+  const seen = new Set();
+  const merged = [];
+  for (const e of [...svcMatches, ...titleMatches]) {
+    if (seen.has(e.id)) continue;
+    seen.add(e.id);
+    merged.push(e);
+  }
+  return merged;
+}
+
+// True if free-form text (title/description prose) matches ANY taxonomy
+// entry's titleTerms. Replaces GRAPH_ENTRA_RE -- the Graph changelog
+// relevance gate now consumes the same single taxonomy definition instead
+// of its own regex.
+//
+// Deliberately checks titleTerms only, never serviceCategoryTerms:
+// serviceCategoryTerms are short labels meant to exact/near-exact-match
+// Microsoft's own **Service category:** field (e.g. 'provisioning'), not to
+// be scanned as substrings of arbitrary prose -- 'provisioning' is also a
+// substring of the unrelated Graph resource name "cloudPcProvisioningPolicy",
+// which caused a real false-positive match during testing (an off-topic
+// Windows 365 Cloud PC item nearly got pulled in as Entra-relevant).
+function matchesAnyTaxonomyEntry(text) {
+  const lower = String(text || '').toLowerCase();
+  return SERVICE_TAXONOMY.some(entry => (entry.titleTerms || []).some(t => lower.includes(t)));
+}
+
+// Namespace assignment (external-id vs entra-id) -- UNCHANGED behaviour from
+// before Phase 2, just sourced from the taxonomy's entra-external-id entry
+// instead of standalone EXTERNAL_ID_SERVICE_CATEGORIES/EXTERNAL_ID_TITLE_KEYWORDS
+// constants. serviceCategory is checked only against serviceCategoryTerms;
+// title is checked only against titleTerms -- the same two field-scoped
+// checks as before, not a general taxonomy match, so this cannot pick up any
+// term from any OTHER taxonomy entry.
+const EXTERNAL_ID_TAXONOMY_ENTRY = SERVICE_TAXONOMY.find(e => e.id === 'entra-external-id');
 function isExternalId(title, serviceCategory) {
   const t = (title || '').toLowerCase();
   const s = (serviceCategory || '').toLowerCase();
-  return EXTERNAL_ID_SERVICE_CATEGORIES.some(k => s.includes(k))
-      || EXTERNAL_ID_TITLE_KEYWORDS.some(k => t.includes(k));
+  return EXTERNAL_ID_TAXONOMY_ENTRY.serviceCategoryTerms.some(k => s.includes(k))
+      || EXTERNAL_ID_TAXONOMY_ENTRY.titleTerms.some(k => t.includes(k));
+}
+
+// Routes every parsed item through the taxonomy exactly once. An item
+// matching nothing is dropped -- never silently: counted per source in
+// `unmatched` and a bounded sample (title + source, capped at 10 total)
+// is kept in `unmatchedSamples` so the taxonomy can be extended from
+// evidence. Overwrites the scalar `serviceCategory` with the primary
+// match's canonical name (classifyTaxonomy()'s first returned entry --
+// Tier 1 serviceCategory match if one exists, else the first Tier 2
+// title/description match) -- this NORMALISES Microsoft's raw, inconsistent
+// category strings (whats-new.md alone uses 30+ of them) into the
+// taxonomy's fixed vocabulary. Adds the additive `serviceCategories: []`
+// with every match, not just the primary.
+function routeThroughTaxonomy(items) {
+  const matched = [];
+  const unmatched = {};
+  const unmatchedSamples = [];
+  for (const item of items) {
+    const matches = classifyTaxonomy(item.title, item.description, item.serviceCategory);
+    if (matches.length === 0) {
+      unmatched[item.source] = (unmatched[item.source] || 0) + 1;
+      if (unmatchedSamples.length < 10) unmatchedSamples.push({ title: item.title, source: item.source });
+      continue;
+    }
+    item.serviceCategory = matches[0].name;
+    item.serviceCategories = matches.map(m => m.name);
+    matched.push(item);
+  }
+  return { items: matched, unmatched, unmatchedSamples };
 }
 
 // ── CLASSIFIERS ────────────────────────────────────────────────────────────
@@ -1229,7 +1452,11 @@ function parseExternalIdCommits(jsonText) {
 // OR announced within the last year). This catches the PIM iteration 2 API
 // retirement and future Entra API deprecations without flooding the admin-focused
 // tracker with developer-level minutiae.
-const GRAPH_ENTRA_RE = /privilegedaccess|privileged identity|conditionalaccess|conditional access|directoryrole|directory role|\bsignin\b|authenticationmethod|crosstenant|\bentra\b|identityprotection|riskyuser|namedlocation|azure ad role|microsoft entra/i;
+// Entra-relevance is now decided by matchesAnyTaxonomyEntry() (Phase 2) --
+// the taxonomy's combined term set was built as a superset of what this
+// regex used to check, so this gate can only stay the same width or widen,
+// never narrow (see api/__fixtures__/taxonomy/README.md for the term-by-term
+// mapping and the live before/after verification in the Phase 2 PR).
 // Headline deprecation/retirement semantics (future action), tested on the FIRST
 // sentence only. Bare past-tense "Removed"/"Added" are intentionally excluded --
 // the changelog bundles many edits per item, so we key on the lead change verb.
@@ -1263,7 +1490,7 @@ function parseGraphChangelog(xml) {
     // it must be a deprecation/retirement, and the item must be Entra-relevant.
     const firstSentence = desc.split(/\.\s/)[0];
     if (!GRAPH_DEPRECATION_RE.test(firstSentence)) continue;
-    if (!GRAPH_ENTRA_RE.test(desc)) continue;
+    if (!matchesAnyTaxonomyEntry(desc)) continue;
 
     const pub           = (block.match(/<pubDate>(.*?)<\/pubDate>/i) || [])[1] || '';
     const announcedDate = pubDateToISO(pub);
@@ -1338,7 +1565,7 @@ async function probeCandidateFeeds(warnings) {
 
 // ── BUILD FULL DATASET ─────────────────────────────────────────────────────
 async function buildTrackerData(prevItems) {
-  const allItems = [];
+  let allItems = [];
   const errors   = [];
   const warnings = [];
 
@@ -1421,6 +1648,13 @@ async function buildTrackerData(prevItems) {
   // been restored, so it can be promoted to a real source. Surfaces via warnings[].
   await probeCandidateFeeds(warnings);
 
+  // Route every item through the service taxonomy exactly once, before
+  // sort/dedupe/retention touch anything. Drops items matching no taxonomy
+  // entry -- never silently, see routeThroughTaxonomy()'s unmatched/
+  // unmatchedSamples output, surfaced on the envelope below.
+  const { items: taxonomyItems, unmatched, unmatchedSamples } = routeThroughTaxonomy(allItems);
+  allItems = taxonomyItems;
+
   // Sort: expired_recent (still actionable) -> expired -> red -> yellow ->
   // green, then days asc, then announcedDate desc (newest first) as tiebreak
   // when status+days are equal. expired_recent ranks top because a deadline
@@ -1489,6 +1723,8 @@ async function buildTrackerData(prevItems) {
     coldStart,
     dedupeDropped,
     crossSourceMerged,
+    unmatched,
+    unmatchedSamples,
     sources: {
       'whats-new-md':        countWN,
       'fslogix-docs':        countFS,
@@ -1532,6 +1768,21 @@ export default {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
       });
+
+    // Static in-memory structure -- no auth, never touches KV or upstream
+    // sources, so it's always available regardless of cache state. Single
+    // definition the frontend pills and the /methodology coverage statement
+    // both read from.
+    if (url.pathname === '/entra-tracker/taxonomy') {
+      const taxonomy = SERVICE_TAXONOMY.map(e => ({ id: e.id, name: e.name }));
+      return new Response(JSON.stringify({ taxonomy }, null, 2), {
+        headers: {
+          'Content-Type':  'application/json',
+          'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
+          ...corsHeaders(origin),
+        },
+      });
+    }
 
     // refresh=1 forces 6 upstream fetches per call, one of which (the GitHub
     // commits API) is rate-limited to 60/hr anonymously -- so it must be gated
@@ -1692,4 +1943,9 @@ export {
   parseGraphChangelog,
   parseExternalIdCommits,
   toRSS,
+  SERVICE_TAXONOMY,
+  classifyTaxonomy,
+  matchesAnyTaxonomyEntry,
+  routeThroughTaxonomy,
+  isExternalId,
 };

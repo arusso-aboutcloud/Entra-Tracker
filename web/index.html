@@ -1392,6 +1392,16 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
           <div class="legend-desc">Sometimes the only date in an entry doesn't have clear cutoff language near it — it might be a rollout date, a publish date, or a genuine deadline Microsoft just didn't phrase clearly. Rather than guess with a countdown, the tracker shows the date plainly, labelled "possible date… unconfirmed." Treat it as a lead to verify against the linked Microsoft article, not a date to plan around.</div>
         </div>
 
+        <hr class="legend-divider">
+
+        <div class="legend-item" style="grid-column: 1 / -1;">
+          <div class="legend-item-header">
+            <span class="legend-badge-name" style="color:var(--text)">What this tracker covers</span>
+          </div>
+          <div class="legend-desc">Every item is matched against a single, fixed list of Entra and associated identity services — an item that doesn't match anything on this list isn't shown, on purpose, rather than left in as noise. Filter the feed by service area using the dropdown above the cards. Currently covered:</div>
+          <div class="legend-desc" id="methodology-coverage">Loading…</div>
+        </div>
+
       </div>
     </div>
   </details>
@@ -1414,6 +1424,9 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
     <select id="sort-select" class="sort-sel" title="Sort order">
       <option value="default">Sort: Default (urgency)</option>
       <option value="announced">Sort: Newest announced</option>
+    </select>
+    <select id="svc-category-select" class="sort-sel" title="Filter by Entra service area">
+      <option value="all">All service areas</option>
     </select>
     <div class="search-wrap">
       <input type="text" id="search" class="search-input" placeholder="Search changes..." autocomplete="off">
@@ -1491,7 +1504,7 @@ const PROFILE_KEYWORDS = {
 
 const PROFILE_KEY = 'entra_tracker_profile_v1';
 
-let all=[], af='all', as_=null, sq='', hideExpired=true, sortMode='default', coldStart=false;
+let all=[], af='all', as_=null, sq='', hideExpired=true, sortMode='default', coldStart=false, svcFilter='all';
 let profile = {};
 
 // ── ON RADAR (client-side localStorage watchlist) ─────────────────────────
@@ -1736,6 +1749,7 @@ function getFiltered(){
     if(af === 'external-id' && i.namespace !== 'external-id') return false;
     if(af === 'radar' && !radarIds.has(i.id)) return false;
     if(af !== 'all' && af !== 'expired' && af !== 'tenant' && af !== 'external-id' && af !== 'radar' && i.category !== af) return false;
+    if(svcFilter !== 'all' && i.serviceCategory !== svcFilter) return false;
     // When stat card filter is 'expired', match both expired tiers.
     const statusMatch = as_ === 'expired'
       ? (i.status === 'expired' || i.status === 'expired_recent')
@@ -1974,6 +1988,38 @@ document.getElementById('sort-select').addEventListener('change', e => {
   sortMode = e.target.value;
   render();
 });
+
+// Service-category select -- filters by the taxonomy-normalised serviceCategory,
+// independent of the type filter (retirement/breaking/preview/new) above.
+document.getElementById('svc-category-select').addEventListener('change', e => {
+  svcFilter = e.target.value;
+  render();
+});
+
+// Populate the service-category select from the single taxonomy definition
+// (Phase 2) rather than from whatever categories happen to appear in the
+// current dataset -- so the list is stable even when a service area has
+// zero live items right now.
+async function loadTaxonomy() {
+  try {
+    const res = await fetch(API + '/taxonomy', { mode: 'cors', credentials: 'omit' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const sel = document.getElementById('svc-category-select');
+    for (const entry of (data.taxonomy || [])) {
+      const opt = document.createElement('option');
+      opt.value = entry.name;
+      opt.textContent = entry.name;
+      sel.appendChild(opt);
+    }
+    const coverageEl = document.getElementById('methodology-coverage');
+    if (coverageEl) coverageEl.textContent = (data.taxonomy || []).map(e => e.name).join(' · ');
+  } catch (e) {
+    const coverageEl = document.getElementById('methodology-coverage');
+    if (coverageEl) coverageEl.textContent = 'Coverage list unavailable right now.';
+  }
+}
+loadTaxonomy();
 
 // Subscribe / Export popover — attach listeners
 function initSubscribe() {

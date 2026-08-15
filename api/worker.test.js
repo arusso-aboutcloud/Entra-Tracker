@@ -19,6 +19,11 @@ import {
   makeId,
   fnv1a,
   applyDiff,
+  SERVICE_TAXONOMY,
+  classifyTaxonomy,
+  matchesAnyTaxonomyEntry,
+  routeThroughTaxonomy,
+  isExternalId,
 } from './worker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -406,5 +411,132 @@ describe('buildEvidence / classifyByKeyword', () => {
     // treated as authoritative for whats-new.md entries in isolation.
     const text = loadText('deadline', 'sap-successfactors-deadline.txt');
     assert.equal(classifyByKeyword('Public Preview - Workload identity-based authentication for SAP SuccessFactors provisioning integrations', text), 'retirement');
+  });
+});
+
+// ── SERVICE TAXONOMY (Phase 2) ───────────────────────────────────────────────
+
+describe('SERVICE_TAXONOMY structure', () => {
+  test('every entry has a unique id and name, and a non-empty titleTerms array', () => {
+    const ids = new Set(), names = new Set();
+    for (const entry of SERVICE_TAXONOMY) {
+      assert.ok(entry.id && !ids.has(entry.id), `duplicate or missing id: ${entry.id}`);
+      ids.add(entry.id);
+      assert.ok(entry.name && !names.has(entry.name), `duplicate or missing name: ${entry.name}`);
+      names.add(entry.name);
+      assert.ok(Array.isArray(entry.titleTerms) && entry.titleTerms.length > 0, `${entry.id} has no titleTerms`);
+    }
+  });
+
+  test('entra-id-workforce (the broad catch-all) is last, so more specific entries get first refusal in Tier 2', () => {
+    assert.equal(SERVICE_TAXONOMY[SERVICE_TAXONOMY.length - 1].id, 'entra-id-workforce');
+  });
+});
+
+describe('classifyTaxonomy (real fixtures -- regression guards for bugs found during Phase 2 development)', () => {
+  test('real: "assigning" no longer false-matches the (removed) signin term -- primary is the authoritative serviceCategory, Authentication methods', () => {
+    const fx = loadFixture('taxonomy', 'token-lifetime-policies.json');
+    assert.ok(fx.description.toLowerCase().includes('assigning'), 'fixture must actually contain the trap word, or this test proves nothing');
+    const matches = classifyTaxonomy(fx.title, fx.description, fx.serviceCategory);
+    assert.ok(matches.length > 0);
+    assert.equal(matches[0].name, fx.expectedPrimary);
+    assert.equal(matches[0].name, 'Authentication methods');
+  });
+
+  test('real: an item whose body incidentally lists "Conditional Access policies, named locations" still primaries on its own real serviceCategory, not the incidental mentions', () => {
+    const fx = loadFixture('taxonomy', 'backup-and-recovery.json');
+    assert.ok(fx.description.toLowerCase().includes('conditional access'), 'fixture must contain the incidental mention, or this test proves nothing');
+    const matches = classifyTaxonomy(fx.title, fx.description, fx.serviceCategory);
+    assert.equal(matches[0].name, fx.expectedPrimary);
+    assert.equal(matches[0].name, 'Entra ID (workforce)');
+    // The incidental mentions are still legitimately present as secondary matches.
+    assert.ok(matches.some(m => m.id === 'conditional-access'));
+  });
+
+  test('real: a B2B item mentioning generic "sign-in" language still primaries on serviceCategory B2B -> Entra External ID', () => {
+    const fx = loadFixture('taxonomy', 'domainless-saml-b2b.json');
+    const matches = classifyTaxonomy(fx.title, fx.description, fx.serviceCategory);
+    assert.equal(matches[0].name, fx.expectedPrimary);
+    assert.equal(matches[0].name, 'Entra External ID / Azure AD B2C');
+  });
+
+  test('a whats-new.md item with NO serviceCategory falls through to Tier 2 (title/description) matching', () => {
+    const matches = classifyTaxonomy('Public Preview - New passkey management experience', 'Admins can manage passkey (FIDO2) registrations for external tenant users.', '');
+    assert.ok(matches.some(m => m.id === 'entra-external-id'));
+  });
+
+  test('an item matching nothing returns an empty array', () => {
+    const matches = classifyTaxonomy('Completely unrelated Azure Storage announcement', 'Blob storage tiering is now generally available.', '');
+    assert.deepEqual(matches, []);
+  });
+});
+
+describe('matchesAnyTaxonomyEntry (Graph changelog relevance gate, real fixtures)', () => {
+  test('real: a genuine PIM API deprecation matches (privilegedAccess)', () => {
+    const text = loadText('deadline', 'pim-iteration2-graph-changelog.txt');
+    assert.equal(matchesAnyTaxonomyEntry(text), true);
+  });
+
+  test('real: an off-topic Windows 365 Cloud PC item does NOT match, despite containing "provisioning" as a substring of an unrelated resource name', () => {
+    const text = loadText('taxonomy', 'cloud-pc-off-topic.txt');
+    assert.ok(text.toLowerCase().includes('provisioning'), 'fixture must contain the trap substring, or this test proves nothing');
+    assert.equal(matchesAnyTaxonomyEntry(text), false);
+  });
+
+  test('only checks titleTerms, never serviceCategoryTerms, against free text', () => {
+    // 'other' is entra-id-workforce's serviceCategoryTerms entry (matches
+    // Microsoft's literal "Other" category label) and appears in no entry's
+    // titleTerms -- the cloud-pc fixture above is the real-world proof this
+    // matters; this pins the implementation choice with a direct example.
+    const term = 'other';
+    for (const entry of SERVICE_TAXONOMY) {
+      assert.ok(!entry.titleTerms.includes(term), `expected no entry's titleTerms to contain '${term}'`);
+    }
+    assert.equal(matchesAnyTaxonomyEntry(`this entry's service category is ${term}`), false);
+  });
+});
+
+describe('isExternalId (namespace assignment, unchanged behaviour sourced from the taxonomy)', () => {
+  test('real: raw serviceCategory "B2B" -> external-id namespace', () => {
+    assert.equal(isExternalId('Domainless SAML IdP federation for workforce tenants', 'B2B'), true);
+  });
+
+  test('real: passkey in the title alone (workforce serviceCategory) -> external-id namespace, title-only override', () => {
+    assert.equal(isExternalId('Expanded policy storage for passkeys (FIDO2) in Microsoft Entra ID', 'Authentications (Logins)'), true);
+  });
+
+  test('a plain workforce item with no external-id signal anywhere -> not external-id', () => {
+    assert.equal(isExternalId('General Availability - License Usage', 'Reporting'), false);
+  });
+});
+
+describe('routeThroughTaxonomy (drop counting and sample cap)', () => {
+  // Item-level fixtures here (not raw payload) -- this tests routing/counting
+  // arithmetic, disclosed per the work order's fixture rule for that case.
+  test('an item matching nothing is dropped and counted per source', () => {
+    const items = [
+      { title: 'Unrelated Azure Storage update', description: 'Blob tiering GA.', serviceCategory: '', source: 'entra-whatsnew-md', link: 'x' },
+      { title: 'Public Preview - New passkey experience', description: 'external tenant passkeys', serviceCategory: '', source: 'entra-whatsnew-md', link: 'y' },
+    ];
+    const { items: kept, unmatched } = routeThroughTaxonomy(items);
+    assert.equal(kept.length, 1);
+    assert.equal(kept[0].title, 'Public Preview - New passkey experience');
+    assert.deepEqual(unmatched, { 'entra-whatsnew-md': 1 });
+  });
+
+  test('a matched item gets serviceCategory overwritten to the primary canonical name and serviceCategories[] populated', () => {
+    const items = [{ title: 'Conditional Access update', description: '', serviceCategory: 'Conditional Access', source: 'entra-whatsnew-md', link: 'x' }];
+    const { items: kept } = routeThroughTaxonomy(items);
+    assert.equal(kept[0].serviceCategory, 'Conditional Access');
+    assert.deepEqual(kept[0].serviceCategories, ['Conditional Access']);
+  });
+
+  test('unmatchedSamples is capped at 10 total across all sources', () => {
+    const items = Array.from({ length: 15 }, (_, i) => ({
+      title: `Unrelated item ${i}`, description: 'nothing identity-related here', serviceCategory: '', source: 'entra-whatsnew-md', link: `x${i}`,
+    }));
+    const { unmatched, unmatchedSamples } = routeThroughTaxonomy(items);
+    assert.equal(unmatched['entra-whatsnew-md'], 15);
+    assert.equal(unmatchedSamples.length, 10);
   });
 });

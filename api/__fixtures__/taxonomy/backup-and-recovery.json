@@ -1,0 +1,8 @@
+{
+  "_source": "whats-new.md, March 2026 section, fetched 2026-08-14 -- https://raw.githubusercontent.com/MicrosoftDocs/entra-docs/main/docs/fundamentals/whats-new.md",
+  "_note": "Regression fixture for the Tier-1-priority fix. The description genuinely lists 'Conditional Access policies' and 'named locations' among the object types this feature backs up -- a real, non-accidental mention of two other taxonomy entries' terms inside an item that is not fundamentally about either of them. Before the Tier-1 fix, whichever of those two entries came first in SERVICE_TAXONOMY array order won primary classification purely by incidental mention. After the fix, the item's own real Microsoft-assigned serviceCategory ('Entra Backup and Recovery') decides the primary, and the incidental mentions only contribute secondary entries to serviceCategories[].",
+  "title": "Public Preview - Microsoft Entra Backup and Recovery is now available",
+  "description": "Microsoft Entra Backup and Recovery is a built-in solution to help restore your tenant after accidental changes or malicious updates. Always on by default, it automatically backs up critical directory objects, including users, groups, applications, service principals, managed identities, conditional Access policies, named locations, agent IDs, and authentication and authorization policy, so admins can quickly restore them to a previously known good state.",
+  "serviceCategory": "Entra Backup and Recovery",
+  "expectedPrimary": "Entra ID (workforce)"
+}

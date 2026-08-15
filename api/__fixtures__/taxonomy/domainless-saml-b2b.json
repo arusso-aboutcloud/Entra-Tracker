@@ -1,0 +1,8 @@
+{
+  "_source": "whats-new.md, June 2026 section, fetched 2026-08-14 -- https://raw.githubusercontent.com/MicrosoftDocs/entra-docs/main/docs/fundamentals/whats-new.md",
+  "_note": "Second Tier-1-priority regression fixture: the raw serviceCategory is 'B2B' (Entra External ID territory) but the description mentions 'sign-in' generically ('during sign-in or invitation redemption'). Confirms the authoritative serviceCategory match wins primary over a generic prose mention, independent of the separate signin-substring fix.",
+  "title": "General Availability - Domainless SAML IdP federation for workforce tenants",
+  "description": "Domainless SAML federation with a SAML Identity Provider allows external users to authenticate into your apps or workforce resources using their IdP-managed credentials, regardless of their email domain. Domainless federation removes the need for domain matching between the user's email and preconfigured IdP domains during sign-in or invitation redemption.",
+  "serviceCategory": "B2B",
+  "expectedPrimary": "Entra External ID / Azure AD B2C"
+}

@@ -1,0 +1,8 @@
+{
+  "_source": "whats-new.md, May 2026 section, fetched 2026-08-14 -- https://raw.githubusercontent.com/MicrosoftDocs/entra-docs/main/docs/fundamentals/whats-new.md",
+  "_note": "Regression fixture for a real false-positive found during Phase 2 development: the description contains the word 'assigning', which contains the literal substring 'signin' (a-s-s-I-G-N-I-N-g). An earlier taxonomy draft had 'signin' as a Microsoft-Graph-identity-APIs term (ported from GRAPH_ENTRA_RE's \\bsignin\\b, which used a regex word boundary the plain-substring taxonomy check didn't replicate) and it wrongly won primary classification via a Tier-2 title/description match. Fixed by (a) removing 'signin'/'sign-in' from graph-identity-apis's titleTerms entirely, and (b) making Tier-1 (the real serviceCategory field, 'Authentications (Logins)') take priority over any Tier-2 title/description match when both are present.",
+  "title": "General Availability - Configurable Token Lifetime Policies",
+  "description": "Configurable token lifetime policies are now generally available in Microsoft Entra ID. This feature allows administrators to customize the lifetimes of access tokens, ID tokens, and SAML tokens issued by the Microsoft identity platform by creating and assigning token lifetime policies to applications and service principals. With configurable token lifetime policies, organizations can adjust token durations to meet their security and usability requirements -- for example, shortening access token lifetimes for sensitive applications or extending them for long-running automation scenarios.",
+  "serviceCategory": "Authentications (Logins)",
+  "expectedPrimary": "Authentication methods"
+}
