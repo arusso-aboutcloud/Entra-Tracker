@@ -784,6 +784,41 @@ details[open] > .entry-summary .entry-caret { transform: rotate(180deg); }
 }
 .methodology-link:hover { color: var(--accent); border-color: var(--accent); }
 
+/* Slip-history timeline (net-new) -- lazily filled in when a card with
+   real deadline-change history is expanded. One-shot fade-in on arrival
+   (content just appeared -- motion means "something changed", consistent
+   with A1), no loop, neutralised under reduced-motion via the global rule. */
+.entry-history {
+  margin-bottom: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--surface-2);
+  border: 1px solid var(--pur-bdr);
+  border-radius: 6px;
+  animation: card-in 0.2s ease-out;
+}
+.entry-history-note {
+  font-family: var(--fm); font-size: 0.75rem; color: var(--text-muted);
+}
+.entry-history-headline {
+  font-family: var(--fm); font-size: 0.78rem; color: var(--pur); font-weight: 600;
+  line-height: 1.6;
+}
+.entry-history-arrow { color: var(--text-dim); font-weight: 400; }
+.entry-history-full { margin-top: 0.5rem; }
+.entry-history-full summary {
+  font-family: var(--fm); font-size: 0.72rem; color: var(--text-muted);
+  cursor: pointer; list-style: none;
+}
+.entry-history-full summary::-webkit-details-marker { display: none; }
+.entry-history-full summary:hover { color: var(--text); }
+.entry-history-rows { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.entry-history-row {
+  display: flex; gap: 0.75rem; align-items: baseline;
+  font-family: var(--fm); font-size: 0.72rem; color: var(--text-muted);
+  border-top: 1px solid var(--border-soft); padding-top: 0.35rem;
+}
+.entry-history-date { color: var(--text-dim); min-width: 5.5rem; flex-shrink: 0; }
+
 /* Countdown */
 .entry-right {
   padding: 1.1rem 1.5rem;
@@ -1247,6 +1282,13 @@ details[open] > .entry-summary .entry-caret { transform: rotate(180deg); }
 
         <div class="legend-item" style="grid-column: 1 / -1;">
           <div class="legend-item-header">
+            <span class="badge i-revised" style="vertical-align:middle">&#8635; Revised</span>
+          </div>
+          <div class="legend-desc">The tracker records every change it observes to an item's tracked fields (title, category, status, deadline, deadline confidence, announced date, service area) as its own dated revision. When an item's <strong style="color:var(--text)">deadline specifically</strong> has changed — not just any field, since a title reword or a status drifting from green to yellow as time passes isn't a "slip" — the card gets this badge, and expanding it shows the deadline's full history: every value it has held and when the tracker first saw each one, plus the complete underlying revision log on demand. <strong style="color:var(--text)">This is observed, not asserted</strong> — the tracker began recording on <strong style="color:var(--text)">16 August 2026</strong>; a deadline that slipped before that date, with no further change since, will show as "never moved" until its next real change, because that earlier history genuinely isn't visible to the tracker. "Moved N times" always means N times the tracker has personally witnessed, not the item's full lifetime — said plainly here rather than implying more certainty than the record actually has. Expect this to be sparse at first: the record is young and gets richer as more builds run.</div>
+        </div>
+
+        <div class="legend-item" style="grid-column: 1 / -1;">
+          <div class="legend-item-header">
             <span class="legend-badge-name" style="color:var(--text)">What this tracker covers</span>
           </div>
           <div class="legend-desc">Every item is matched against a single, fixed list of Entra and associated identity services — an item that doesn't match anything on this list isn't shown, on purpose, rather than left in as noise. Filter the feed by service area using the chips in the filter bar. Currently covered:</div>
@@ -1596,6 +1638,97 @@ function openMethodology(){
 }
 window.openMethodology = openMethodology;
 
+// ── Slip-history lazy load (net-new) ─────────────────────────────────────
+// Fetched only when a card WITH real slip history (deadlineChangeCount > 0,
+// the same signal the "Revised" badge already keys off) is actually
+// expanded -- never on page load, never for the other 100+ cards a user
+// hasn't opened. Cached per item id for the session so re-collapsing and
+// re-expanding a card doesn't re-fetch.
+const historyCache = new Map(); // itemId -> { state: 'ready'|'error', data? }
+
+function fmtRevisionMonth(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+  } catch(e) { return iso; }
+}
+
+// A deadline value from /history is a bare 'yyyy-mm-dd' or null -- reuse
+// the same display convention as the countdown panel (the raw date string,
+// not reformatted) so the timeline reads consistently with the rest of the
+// card; "no date" covers the real, honest case of a null in the sequence
+// (an item that gained or lost a deadline entirely, not just moved one).
+function fmtSlipValue(deadline) {
+  return deadline ? esc(deadline) : 'no date';
+}
+
+function slipTimelineHTML(history) {
+  const dh = history.deadlineHistory || [];
+  // Defensive, not just decorative: the badge that triggers this fetch
+  // already implies deadlineChangeCount > 0, but render the honest single-
+  // value state instead of a misleading "moved" claim if it's ever wrong.
+  if (dh.length <= 1) {
+    return `<div class="entry-history-note">No deadline change observed yet in the tracker's own recorded history.</div>`;
+  }
+  const seq = dh.map(d => fmtSlipValue(d.deadline)).join(' <span class="entry-history-arrow">&#8594;</span> ');
+  const n = history.deadlineChangeCount;
+  const revisionRows = (history.revisions || []).map(r => {
+    const changed = (r.changedFields && r.changedFields.length) ? r.changedFields.join(', ') : 'first tracked (baseline)';
+    return `<div class="entry-history-row">
+      <span class="entry-history-date">${esc(fmtRevisionMonth(r.observedAt))}</span>
+      <span class="entry-history-changed">${esc(changed)}</span>
+    </div>`;
+  }).join('');
+  return `
+    <div class="entry-history-headline">Moved ${n} time${n!==1?'s':''}: ${seq}</div>
+    <details class="entry-history-full">
+      <summary>Show full revision history (${history.revisions.length})</summary>
+      <div class="entry-history-rows">${revisionRows}</div>
+    </details>`;
+}
+
+function renderCardHistory(itemId, container) {
+  const cached = historyCache.get(itemId);
+  if (!cached) return;
+  if (cached.state === 'error') {
+    container.innerHTML = `<div class="entry-history-note">History unavailable right now.</div>`;
+    return;
+  }
+  if (!cached.data || !cached.data.found) {
+    container.innerHTML = `<div class="entry-history-note">No history recorded yet.</div>`;
+    return;
+  }
+  container.innerHTML = slipTimelineHTML(cached.data);
+}
+
+async function loadCardHistory(itemId, container) {
+  if (historyCache.has(itemId)) { renderCardHistory(itemId, container); return; }
+  try {
+    const res = await fetch(API + '/history/' + encodeURIComponent(itemId), { mode: 'cors', credentials: 'omit' });
+    // A 404 from this endpoint is a clean, well-formed "no history" body,
+    // not a failure -- only genuine transport/5xx errors go to the catch.
+    if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    historyCache.set(itemId, { state: 'ready', data });
+  } catch (e) {
+    historyCache.set(itemId, { state: 'error' });
+  }
+  renderCardHistory(itemId, container);
+}
+
+// <details>'s own `toggle` event does not bubble, so delegation requires a
+// capture-phase listener on an ancestor (attached once, in initSubscribe-
+// adjacent init code below) rather than one per card -- survives every
+// render() replacing #list's contents without needing to be re-attached.
+function onCardToggle(e){
+  const details = e.target;
+  if (!details.matches || !details.matches('.entry') || !details.open) return;
+  const itemId = details.dataset.itemId;
+  const container = details.querySelector('.entry-history');
+  if (!itemId || !container) return; // no slip history slot on this card -- nothing to fetch
+  loadCardHistory(itemId, container);
+}
+
 // Card redesign (A3): a native <details> per card. The summary row stays
 // compact/scannable (title, key badges, countdown, announcements -- the
 // latter always visible since a roadmap link or dateConflict is a trust
@@ -1615,12 +1748,17 @@ function entryHTML(item){
   const dateConflictBadge = item.dateConflict
     ? `<span class="badge i-dateconflict" title="Microsoft's roadmap states a different date than the source this deadline came from -- see the roadmap entry below">&#9888; Dates disagree</span>`
     : '';
-  // "Recently moved" slot (A3): wired to the one real signal already
-  // available (a reworded title, Phase 1's titleHistory[]) -- the read-side
-  // deadline-slip signal from the D1 revision store lands in a later work
-  // order and will extend this same badge rather than requiring a new one.
-  const revisedBadge = (item.titleHistory && item.titleHistory.length)
-    ? `<span class="badge i-revised" title="Microsoft has revised this item's details since it was first tracked (e.g. a reworded title). Deadline-change history will appear here in a future update.">&#8635; Revised</span>`
+  // "Recently moved" slot (A3), now wired to the real D1-backed signal
+  // instead of the titleHistory[] placeholder PR #28 shipped -- same badge,
+  // real data, per the work order ("wire the existing badge to the real
+  // data; don't add a second badge"). deadlineChangeCount is additive,
+  // computed at build time (see README) so this never costs a per-card
+  // query. Only fires on a genuine deadline change (not e.g. a reworded
+  // title with an unchanged deadline) -- that's specifically what makes a
+  // card worth expanding for the timeline below.
+  const hasSlipHistory = item.deadlineChangeCount > 0;
+  const revisedBadge = hasSlipHistory
+    ? `<span class="badge i-revised" title="This item's deadline has changed ${item.deadlineChangeCount} time${item.deadlineChangeCount!==1?'s':''} since the tracker started recording history -- expand for the timeline">&#8635; Revised</span>`
     : '';
   const tier = item.evidence && item.evidence.tier;
   const tierBadge = tier
@@ -1645,7 +1783,7 @@ function entryHTML(item){
     return parts.length ? `<div class="entry-meta-line">${parts.join(' &middot; ')}</div>` : '';
   })();
 
-  return `<details class="entry ${sc}">
+  return `<details class="entry ${sc}" data-item-id="${esc(item.id)}">
     <summary class="entry-summary">
       <div class="entry-strip"></div>
       <div class="entry-main">
@@ -1673,6 +1811,7 @@ function entryHTML(item){
       <div class="entry-detail-desc">${esc(item.description||'')}</div>
       ${evidenceBlock}
       ${sourcesLine}
+      ${hasSlipHistory ? `<div class="entry-history" data-history-for="${esc(item.id)}"><div class="entry-history-note">Loading history&hellip;</div></div>` : ''}
       <div class="entry-detail-links">
         ${ms}${ar}
         <button class="methodology-link" type="button" onclick="openMethodology()">How is this scored? &#8594;</button>
@@ -2152,6 +2291,8 @@ async function load(){
     document.getElementById('upd').textContent = 'Update failed';
   }
 }
+
+document.getElementById('list').addEventListener('toggle', onCardToggle, true);
 
 load();
 initSubscribe();

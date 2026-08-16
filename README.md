@@ -113,20 +113,62 @@ new logic took over.
 
 ### D1: `entra-tracker-history` (binding `TRACKER_DB`)
 
-**This is a write-only, side-band history store — there is no read endpoint for it, and that's not a gap to fill by accident.** Nothing in the API response or the frontend reads from it as of Phase 3. It exists purely so deadline-slip history *starts accumulating now*, because it can't be reconstructed retroactively — Phase 4/5 will eventually read it.
+Write path from Phase 3 (still exactly as it was — see below); a **read** path was added in a later, separate work order and is documented under "Slip-history read path" further down. The write path exists so deadline-slip history *starts accumulating*, because it can't be reconstructed retroactively.
 
 | Property | Value |
 |---|---|
 | Database name | `entra-tracker-history` |
 | Database ID | `2fa8bcf3-1180-45dc-b866-93abfbd00c54` |
 | Created | 2026-08-16, via the Cloudflare API (D1 database creation), Phase 3 |
-| Schema | `api/migrations/0001_create_item_revisions.sql` — one `item_revisions` table |
+| Schema | `api/migrations/0001_create_item_revisions.sql` — one `item_revisions` table, one index `idx_item_revisions_item_id_id (item_id, id DESC)` |
 
 **What it records:** on each build, after the item set is fully finalised (post-dedupe, post-taxonomy), every item's tracked fields (`title`, `category`, `status`, `deadline`, `deadlineConfidence`, `announcedDate`, `serviceCategory`) are hashed. A row is inserted only when that hash differs from the item's most recently stored revision (or it has none yet) — unchanged items write nothing. Each inserted row also records `changed_fields`: which of the tracked fields actually differ from the prior revision.
 
 **Non-fatal by design:** every D1 access is wrapped so a failure — connection, migration drift, constraint violation, timeout — can never prevent the KV write, alter the API response, or throw out of the build. Diagnostics go to the Worker's console log only, never into the response `warnings[]` array, so the API envelope is byte-for-byte identical whether D1 is healthy, failing, or entirely absent. Verified with a dedicated test (`api/worker.test.js`) that runs the full build with a D1 binding that throws on every call and confirms the response is unchanged.
 
 **Cold-start safe:** the write decision is keyed off D1's own stored history, not the KV cache's `coldStart` flag — a KV cold start doesn't cause a revision-store write storm, because D1 still remembers what it saw last time regardless of what happened to the KV cache. The only scenario that inserts a full-corpus baseline in one build is D1's own first-ever run against an empty table, which is expected and one-time.
+
+**The write path (`writeRevisions()`, the schema, `REVISION_FIELD_COLUMNS`) is untouched by the read work below** — read-only against the existing store, no table changes; the pre-existing index already served every read query needed, so no migration was required for this phase either.
+
+## Slip-history read path (net-new)
+
+Exposes the D1 store above, which had been write-only and silently accumulating since 2026-08-16.
+
+### `GET /entra-tracker/history/:itemId`
+
+No auth, read-only, cheap. `itemId` must match `^[0-9a-f]{8}$` (the real shape of every item id — see "Item identity" above); anything else is rejected before it ever reaches D1, at zero query cost. Returns:
+
+```json
+{
+  "itemId": "6ec464da",
+  "found": true,
+  "revisions": [
+    { "observedAt": "2026-08-16T15:00:00.000Z", "title": "...", "category": "...", "status": "...", "deadline": null, "deadlineConfidence": null, "announcedDate": "...", "serviceCategory": "...", "changedFields": [] },
+    ...
+  ],
+  "deadlineHistory": [
+    { "deadline": "2025-06-01", "observedAt": "2026-06-01T00:00:00.000Z" },
+    { "deadline": "2025-10-01", "observedAt": "2026-07-01T00:00:00.000Z" }
+  ],
+  "deadlineChangeCount": 1
+}
+```
+
+- `revisions[]` is the full ordered log for that item, oldest first, row-capped at 200. The first revision is always the baseline — its `changedFields` is `[]` (nothing to diff against), never populated as if every field mutated.
+- `deadlineHistory[]` is the headline signal: the `deadline` column run-length-encoded to its distinct-value sequence (e.g. "Jun → Oct → Mar"). An item rebuilt 40 times with an unchanged deadline still has a single-entry `deadlineHistory` — status/title changes that leave `deadline` untouched don't count as a "slip." `null` is tracked as a real value too (an item can gain or lose a deadline entirely).
+- `deadlineChangeCount` is `deadlineHistory.length - 1`.
+- Unknown item id, or D1 unavailable, both return a clean, well-formed empty shape (`found: false`, empty arrays) — 404 for unknown, 503 if D1 itself is unreachable — never a 500 that reads as "the tracker is broken."
+- **Query plan:** a single indexed lookup, `WHERE item_id = ? ORDER BY observed_at ASC, id ASC LIMIT 200`, served by the existing Phase 3 index `(item_id, id DESC)` (SQLite can walk an index in either direction). Tiebreaks on the autoincrement `id`, same reasoning as the write path: `observed_at` can collide across a retried write, `id` can't. Never fetches upstream, never triggers a rebuild.
+
+### `deadlineChangeCount` on every item (additive)
+
+Every item in the main envelope's `items[]` now also carries `deadlineChangeCount` (0 = never moved, as far as the tracker has observed). Computed **once per build**, not per item/per request: a single batch aggregate query against D1, scoped to only the current build's item ids (`WHERE item_id IN (...)`) so cost stays proportional to today's feed size, not to years of accumulated history for items that have long since aged out. Uses SQLite window functions (`LAG`/`ROW_NUMBER`, confirmed supported against the live database before writing this) to detect, per item, how many of its revisions actually changed `deadline` versus the immediately preceding one. Non-fatal — a query failure yields every item defaulting to `deadlineChangeCount: 0`, proven with a dedicated test that runs a full build against a throwing D1 and diffs the result against a no-D1 build.
+
+The PR #28 "Revised" badge (`↻`), previously a placeholder bound to `titleHistory[]` (any reworded title), now binds to this real signal exclusively — it only fires on a genuine deadline change, which is what actually makes a card worth expanding for the timeline. Same badge, real data, not a second badge.
+
+**Honesty about coverage:** "moved N times" only counts changes the tracker has personally observed since it started recording (2026-08-16) — an item that slipped before that date, with no further change since, currently shows as "never moved." This is stated plainly in `/methodology`, not smoothed over.
+
+**Observed revision-count distribution at merge time** (live D1, queried directly before writing this PR): 103 total rows, 103 distinct items — **every current item has exactly one revision (its baseline)**. Zero items have more than one revision yet, so `deadlineChangeCount` is currently `0` for the entire live feed and no card shows the "Revised" badge in production today. This is expected, not a bug: the store is young (its first real production write was the same day it was created) and this feature was explicitly designed to render gracefully at zero — badge absent, no timeline, no fetch — and get richer as more builds run and real changes accumulate. Verification of the rich (multi-slip) UI states used mocked data for this reason; see the PR for screenshots of both the sparse (real, current) and rich (mocked, future) states.
 
 ---
 
@@ -317,7 +359,7 @@ Every item also carries a Tier A/B/C badge recording how strong Microsoft's own 
 - 📡 Subscribe / Export — popover button surfacing RSS feeds (full and External ID), a **Calendar (.ics)** subscription (new), CSV export, and JSON API with one-click copy-to-clipboard for pasting into RSS/calendar readers, Teams, Power Automate, and spreadsheets
 - 🅰️ Evidence tier badge (Tier A/B/C) on every card — how strong Microsoft's own signal was; the full evidence quote and source link now live in each card's expandable detail region (see "Card redesign" below), not always-visible, to keep the collapsed list scannable
 - ⏳ Deadline confidence hedge — cards with an `'inferred'`-confidence deadline show the date plainly ("possible date … unconfirmed") instead of a countdown, since a countdown implies more certainty than the source text actually supports; the same items get a leading `~` in the `.ics` feed
-- ↻ "Revised" badge — flags an item whose title has been reworded by Microsoft since it was first tracked (`titleHistory[]`, Phase 1). Styled and positioned as the slot a future deadline-slip signal (from the D1 revision store, a separate later work order) will extend, so that feature won't need another redesign.
+- ↻ "Revised" badge (now wired to real data) — flags an item whose `deadline` has genuinely changed since the tracker started recording it (`deadlineChangeCount > 0`), not just any field change. Expanding the card lazily fetches `GET /entra-tracker/history/:itemId` (only for cards that actually have history — never on page load, never for the 100+ cards a user hasn't opened) and shows the headline deadline-slip sequence ("moved N times: Jun → Oct → Mar") plus the full revision log on demand. Was originally shipped bound to `titleHistory[]` (any reworded title) as a placeholder for this exact feature; same badge, real data now, not a second badge.
 - 📊 Methodology section — collapsible, plain-language explanation of evidence tiers and deadline confidence, written for an Entra admin rather than a developer; includes a coverage statement listing every service area the tracker covers, sourced from the same taxonomy as the filter chips, and a section on the Microsoft 365 Roadmap source
 - ⚠️ Degraded-mode banner — appears only when a source hasn't updated normally, names it plainly ("hasn't updated normally this cycle"), no red-alert styling; disappears automatically once the source recovers
 - 🕓 Per-source status footer — last successful update time for every source, sourced from `GET /health`; a degraded source's stale timestamp is visually distinguished from the others

@@ -2128,6 +2128,135 @@ async function writeRevisions(env, items, observedAtISO) {
   }
 }
 
+// ── SLIP-HISTORY READ PATH (net-new, read-only against the Phase 3 store) ──
+// Strictly additive to the write path above -- writeRevisions() and the
+// schema are untouched by anything below. Every D1 access here is wrapped
+// exactly like the write path: a failure must never delay, shrink, or error
+// the main feed, and must never corrupt the read endpoint's own response
+// into something that looks like the tracker itself is broken.
+
+// item ids are always the 8-hex-char output of fnv1a() (see makeId()) --
+// reject anything else before it ever reaches a query, cheaper than a D1
+// round trip for garbage input and closes off building an arbitrarily
+// expensive WHERE clause from unvalidated input.
+const ITEM_ID_RE = /^[0-9a-f]{8}$/;
+
+// Row cap per single item's history -- generous relative to any real
+// item's plausible revision count today, but bounds the worst case if a
+// future bug ever caused runaway row growth for one id.
+const HISTORY_ROW_CAP = 200;
+
+// D1 column name -> JS field name, the inverse of REVISION_FIELD_COLUMNS,
+// for shaping a raw D1 row into the same camelCase vocabulary the rest of
+// the API already uses.
+const REVISION_COLUMN_FIELDS = Object.fromEntries(
+  Object.entries(REVISION_FIELD_COLUMNS).map(([jsField, col]) => [col, jsField])
+);
+
+function shapeRevisionRow(row) {
+  const shaped = { observedAt: row.observed_at };
+  for (const [col, jsField] of Object.entries(REVISION_COLUMN_FIELDS)) {
+    shaped[jsField] = row[col] ?? null;
+  }
+  try { shaped.changedFields = JSON.parse(row.changed_fields || '[]'); }
+  catch (e) { shaped.changedFields = []; }
+  return shaped;
+}
+
+// Run-length-encodes the `deadline` column across an item's ordered
+// revisions into the distinct-value sequence the work order calls the
+// "headline" signal (e.g. "Jun -> Oct -> Mar"). Deliberately looks only at
+// consecutive VALUE changes, not at revision count -- an item can pick up
+// a new revision because its title or status changed with the deadline
+// untouched (status legitimately drifts red/yellow/green as time passes
+// even with nothing new to report), and that must not count as a "slip".
+// null is a real, trackable value here too (an item can gain or lose a
+// deadline entirely, not just move one), so comparisons use strict
+// equality, not truthiness.
+function computeDeadlineHistory(revisions) {
+  const history = [];
+  for (const r of revisions) {
+    const last = history[history.length - 1];
+    if (!last || last.deadline !== r.deadline) {
+      history.push({ deadline: r.deadline, observedAt: r.observedAt });
+    }
+  }
+  return history;
+}
+
+// Batch, build-time aggregate (§B): one query covering every item in the
+// CURRENT build, not a per-request/per-card lookup -- this is what makes
+// deadlineChangeCount safe to put on every item without an N+1 query per
+// card. Scoped to only the current item set's ids (not the whole,
+// ever-growing revision table) via WHERE item_id IN (...), so cost stays
+// proportional to today's feed size, not to years of accumulated history
+// for items that have long since aged out of the feed.
+//
+// LAG()/ROW_NUMBER() are real SQLite window functions, confirmed
+// supported against the live D1 database before writing this (not
+// assumed). A "change" is a revision whose own `deadline` differs from
+// the immediately preceding revision for the SAME item_id (rn > 1 excludes
+// each item's own baseline row, which has nothing to compare against).
+// Non-fatal: on any failure, returns an empty map and every item falls
+// back to deadlineChangeCount: 0 -- the main feed is never delayed,
+// shrunk, or broken by this.
+async function computeDeadlineChangeCounts(env, items) {
+  const counts = new Map();
+  if (!env || !env.TRACKER_DB || !items.length) return counts;
+  try {
+    const ids = items.map(i => i.id);
+    const placeholders = ids.map(() => '?').join(',');
+    const { results } = await env.TRACKER_DB.prepare(`
+      SELECT item_id, COUNT(*) as changes FROM (
+        SELECT item_id, deadline,
+               LAG(deadline) OVER (PARTITION BY item_id ORDER BY id) AS prev_deadline,
+               ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY id) AS rn
+        FROM item_revisions
+        WHERE item_id IN (${placeholders})
+      ) t
+      WHERE rn > 1 AND deadline IS NOT prev_deadline
+      GROUP BY item_id
+    `).bind(...ids).all();
+    for (const row of results) counts.set(row.item_id, row.changes);
+  } catch (e) {
+    console.error('deadlineChangeCounts (non-fatal):', e && e.message);
+  }
+  return counts;
+}
+
+// The GET /entra-tracker/history/:itemId route (§A): a single indexed
+// lookup by item_id (the existing Phase 3 index on (item_id, id DESC)
+// serves this in either scan direction), ordered oldest-first, capped.
+// Tiebreaks on `id` exactly like the write path's own "latest revision"
+// query, for the same reason: observed_at can collide across a retried
+// write, id cannot. Never fetches upstream, never triggers a rebuild --
+// purely a read against whatever D1 already has.
+async function fetchItemHistory(env, itemId) {
+  if (!env || !env.TRACKER_DB) return null;
+  try {
+    const { results } = await env.TRACKER_DB.prepare(
+      `SELECT observed_at, title, category, status, deadline, deadline_confidence,
+              announced_date, service_category, changed_fields
+       FROM item_revisions
+       WHERE item_id = ?
+       ORDER BY observed_at ASC, id ASC
+       LIMIT ?`
+    ).bind(itemId, HISTORY_ROW_CAP).all();
+
+    if (!results.length) return { itemId, found: false, revisions: [], deadlineHistory: [], deadlineChangeCount: 0 };
+
+    const revisions = results.map(shapeRevisionRow);
+    const deadlineHistory = computeDeadlineHistory(revisions);
+    return {
+      itemId, found: true, revisions, deadlineHistory,
+      deadlineChangeCount: Math.max(0, deadlineHistory.length - 1),
+    };
+  } catch (e) {
+    console.error('fetchItemHistory (non-fatal):', e && e.message);
+    return null; // caller distinguishes "D1 unavailable" from "genuinely no history"
+  }
+}
+
 // ── HEALTH / DEGRADED MODE (Phase 4) ─────────────────────────────────────────
 // Stored in KV (its own key, NOT inside the main cache blob or the public
 // API response), not D1 -- deliberately. D1 (Phase 3) is explicitly allowed
@@ -2531,6 +2660,16 @@ async function buildTrackerData(prevItems, env) {
   // own errors internally.
   await writeRevisions(env, diffed, lastUpdated);
 
+  // Slip-history batch aggregate (net-new, read-only against the store
+  // above): runs AFTER the write so a genuine slip detected by THIS build
+  // is reflected in its own deadlineChangeCount, not lagging one build
+  // behind. Non-fatal -- a failure yields an empty map and every item
+  // below falls back to 0, never delaying or shrinking the response.
+  const deadlineChangeCounts = await computeDeadlineChangeCounts(env, diffed);
+  for (const item of diffed) {
+    item.deadlineChangeCount = deadlineChangeCounts.get(item.id) ?? 0;
+  }
+
   return {
     lastUpdated,
     count:          diffed.length,
@@ -2615,6 +2754,39 @@ export default {
       } catch (e) { console.error('health read:', e.message); }
 
       return new Response(JSON.stringify(buildHealthResponse(healthState), null, 2), {
+        headers: {
+          'Content-Type':  'application/json',
+          'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
+          ...corsHeaders(origin),
+        },
+      });
+    }
+
+    // Read-only slip history for one item (net-new). No auth (rule 6, same
+    // posture as /health and /taxonomy): a single indexed D1 lookup, row-
+    // capped, never fetches upstream or triggers a rebuild. Invalid/unknown
+    // ids get a clean 404 with a well-formed empty body, never a 500 that
+    // reads as "the tracker is broken".
+    const historyMatch = url.pathname.match(/^\/entra-tracker\/history\/([^/]+)$/);
+    if (historyMatch) {
+      const itemId = historyMatch[1];
+      if (!ITEM_ID_RE.test(itemId)) {
+        return new Response(JSON.stringify({ itemId, found: false, revisions: [], deadlineHistory: [], deadlineChangeCount: 0 }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+        });
+      }
+      const history = await fetchItemHistory(env, itemId);
+      if (history === null) {
+        // D1 itself unavailable -- distinct from "genuinely no history",
+        // but still a clean, well-formed response, not a 500.
+        return new Response(JSON.stringify({ itemId, found: false, revisions: [], deadlineHistory: [], deadlineChangeCount: 0 }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+        });
+      }
+      return new Response(JSON.stringify(history, null, 2), {
+        status: history.found ? 200 : 404,
         headers: {
           'Content-Type':  'application/json',
           'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
@@ -2840,4 +3012,10 @@ export {
   icsEscapeText,
   foldICSLine,
   selectByNamespace,
+  ITEM_ID_RE,
+  HISTORY_ROW_CAP,
+  shapeRevisionRow,
+  computeDeadlineHistory,
+  computeDeadlineChangeCounts,
+  fetchItemHistory,
 };

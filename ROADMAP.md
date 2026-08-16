@@ -259,6 +259,60 @@
   (escaping, folding, tentative marker, non-fatal skip, namespace
   filtering) plus a dedicated no-pipeline-diff suite exercising `toCSV`/
   `toRSS` directly; 127 tests total (108 pre-existing unaffected).
+- [x] Slip-history read UI + endpoint -- exposes the D1 revision store
+  (Phase 3) that had been write-only since 2026-08-16, and wires PR #28's
+  "Revised" badge slot to real data instead of its `titleHistory[]`
+  placeholder. Read-only against the store: `writeRevisions()`, the
+  schema, and `REVISION_FIELD_COLUMNS` are byte-for-byte unchanged; no
+  migration needed either, since the existing Phase 3 index already
+  served every read query this phase issues.
+  New `GET /entra-tracker/history/:itemId` -- a single indexed lookup
+  (`WHERE item_id = ? ORDER BY observed_at ASC, id ASC LIMIT 200`, served
+  by the existing `(item_id, id DESC)` index in either scan direction, tie-
+  broken on the autoincrement `id` for the same reason the write path
+  already does), no auth, never fetches upstream or rebuilds. Invalid item
+  id shapes (validated against `^[0-9a-f]{8}$`, the real fnv1a id format)
+  are rejected before ever reaching D1. Returns the ordered revision log
+  (baseline's `changedFields` correctly `[]`, not fabricated) plus a
+  pre-derived `deadlineHistory[]` -- the `deadline` column run-length-
+  encoded to its distinct-value sequence, so an item rebuilt dozens of
+  times with an unchanged deadline still collapses to one entry; only a
+  genuine value change (including gaining or losing a deadline entirely,
+  tracked via strict equality against `null`) counts as a "move." Unknown
+  id -> clean 404; D1 down -> clean 503; both return the same well-formed
+  empty shape, never a 500 that reads as "the tracker is broken."
+  New additive `deadlineChangeCount` on every item in the main envelope,
+  computed **once per build** via a single batch aggregate (SQLite window
+  functions `LAG`/`ROW_NUMBER`, confirmed supported against the live D1
+  before writing the query) scoped to only the current build's item ids
+  (`WHERE item_id IN (...)`) so cost tracks today's feed size, not years
+  of accumulated history for items long since aged out of the feed --
+  explicitly not a per-card/per-request lookup, which is what makes it
+  safe to put on every item. Non-fatal: a failing aggregate yields
+  `deadlineChangeCount: 0` for every item, proven with a dedicated test
+  diffing a real build against one run with a throwing D1.
+  Frontend: the "Revised" badge now fires only on a genuine deadline
+  change (a reworded title alone no longer triggers it -- that was always
+  meant as a placeholder, not a permanent second meaning for the badge).
+  Expanding a flagged card lazily fetches its history (cached per session,
+  never re-fetched on re-collapse/re-expand, never fetched at all for the
+  100+ cards a user hasn't opened) and renders the deadline-slip sequence
+  as the headline, with the full revision log available on demand behind
+  a nested disclosure. `/methodology` extended with an honest explanation:
+  history is observed starting 2026-08-16, not asserted for an item's
+  full lifetime -- a slip that happened before that date and hasn't
+  recurred since will show as "never moved," stated plainly rather than
+  implying more certainty than the record has.
+  **Observed revision-count distribution, reported honestly per the work
+  order's explicit ask:** live D1 queried directly before merge -- 103
+  total rows, 103 distinct items, every current item has exactly one
+  revision (its baseline). Zero items have slipped yet, so
+  `deadlineChangeCount` is `0` across the entire live feed today and no
+  card shows the badge in production. Expected for a one-day-old store,
+  not a bug -- the feature is explicitly designed to render gracefully at
+  zero and get richer as real changes accumulate. The rich (multi-slip)
+  UI states were verified with mocked data for exactly this reason.
+  150 tests total (127 pre-existing unaffected, 23 new).
 
 ## Planned
 
