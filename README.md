@@ -169,7 +169,8 @@ Machine-readable per-source health, meant to be polled by an external monitor. N
 |---|---|---|
 | `format` | `csv` | Return dataset as CSV instead of JSON. Reuses cached data — does not trigger a re-fetch. Columns: `title,category,impact,status,announcedDate,firstSeen,deadline,daysRemaining,namespace,link`. Response includes `Content-Disposition: attachment; filename="entra-tracker.csv"`. |
 | `format` | `rss` | Return top 50 items as RSS 2.0 feed, newest-first by `firstSeen`. Reuses cached data. `Content-Type: application/rss+xml`. Respects `namespace` filter. |
-| `namespace` | `external-id` | Filter items to External ID namespace only. Works with JSON, CSV, and RSS formats. |
+| `format` | `ics` | Return every item with a real `deadline` as an iCalendar (RFC 5545) subscription feed — one all-day `VEVENT` per dated item, unfiltered by status (a past deadline still gets an event, same as CSV). Reuses cached data. `Content-Type: text/calendar`. Respects `namespace` filter. See "Calendar (.ics) feed" below. |
+| `namespace` | `external-id` | Filter items to External ID namespace only. Works with JSON, CSV, RSS, and ICS formats. |
 | `refresh` | `1` | Bypass KV cache and force a fresh fetch from all sources. **Requires** an `X-Refresh-Token` request header matching the `REFRESH_TOKEN` secret; if that secret isn't configured, `refresh=1` is silently ignored and the cached response is served instead. |
 
 **`announcedDate` field:** Each item now includes `announcedDate` (ISO `yyyy-mm-dd` or `null`). Populated from the `## Month YYYY` section header in whats-new.md / docs changelogs, the commit date in the commits source, or the RSS pubDate. This is the publication/announcement date only — it never becomes a deadline.
@@ -193,6 +194,20 @@ Machine-readable per-source health, meant to be polled by an external monitor. N
 **Item identity (`id`):** composed from `source` + `link` + normalised title (previously a bare hash of the title, with ad hoc per-parser prefixes). The format is unchanged (8 hex characters). A rewording of an item's title is now tolerated via similarity matching (same source, same `announcedDate` month, title similarity ≥0.70 — validated against a real MicrosoftDocs heading-rename commit, see `api/worker.js`'s `TITLE_REWORD_SIMILARITY_THRESHOLD` comment) rather than minting a new id and resetting `firstSeen`.
 
 **Cold-start `firstSeen` repair:** on a cold start (no usable prior snapshot — see Cache behavior above), each item's `firstSeen` is seeded from its `announcedDate` when that's in the past, rather than flattened to the day of the cold start for every item at once (the failure mode documented in PR #22, 2026-08-14). Items without a usable `announcedDate` still fall back to the cold-start date. The RSS feed also now falls back to `announcedDate` as a secondary sort key when `firstSeen` values tie, so a future cold start degrades to an estimated-but-ordered feed instead of collapsing to arrival order.
+
+## Calendar (.ics) feed
+
+`GET /entra-tracker?format=ics` — every tracked item with a real `deadline`, one per year at most as an admin subscribes once and it stays current, rather than a one-off CSV download. Hand-built strings, no library (kept the Worker bundle dependency-free, same as CSV/RSS).
+
+- **One `VEVENT` per dated item**, all-day (`DTSTART`/`DTEND;VALUE=DATE`, `DTEND` the day after `DTSTART` per the all-day-event convention). Dateless items are skipped — nothing to put on a calendar.
+- **Not filtered by status** — a past (expired) deadline still gets an event, exactly like the CSV export's behaviour; a calendar client naturally shows a past event as past.
+- **`deadlineConfidence: 'inferred'` items are included, not excluded**, with a leading `~` in `SUMMARY` and an "(unconfirmed — verify against the source)" note in `DESCRIPTION` — the same hedge the frontend already shows as "possible date… unconfirmed" rather than a countdown. Throwing the information away outright would lose real signal a subscriber might still want.
+- `SUMMARY` = an urgency emoji marker (🔴/🟡/🟢/⚫, matching the frontend's own colour system) + the item title. `DESCRIPTION` = category, service area, evidence tier, deadline confidence, and the source link. `URL` = the item link.
+- One `VALARM` per event: `TRIGGER:-P3D` (a 3-day-before reminder, `ACTION:DISPLAY`).
+- RFC 5545 compliance: CRLF line endings throughout; `,` `;` `\` and newlines escaped in `SUMMARY`/`DESCRIPTION`; lines folded at 75 UTF-8 octets (not characters — a SUMMARY with an emoji marker is byte-aware, code-point-safe so a fold never splits an emoji) with a single-space continuation prefix, per the spec. `UID` is `<item.id>@entratracker.aboutcloud.io` — stable across builds as long as the item's own identity doesn't change (see "Item identity" above).
+- **Non-fatal per event:** a single malformed item (an unparseable deadline) is skipped, logged, and does not corrupt the rest of the calendar — verified with a dedicated test that mixes one broken item between two valid ones.
+- Verified two ways before shipping: unit tests covering escaping/folding/tentative-marker/non-fatal-skip, and an independent RFC 5545 parser (`node-ical`) round-tripping the real output of a live production fetch — 5 real dated items parsed back out correctly (all-day dates, alarms, UIDs, the tentative marker on the one `inferred`-confidence item).
+- Appears as its own row in the frontend's Subscribe/Export popover, alongside RSS/CSV/JSON.
 
 **Threshold note:** the cross-source merge similarity threshold (0.82, Phase 0.1) has only ever fired on hand-built fixtures — `crossSourceMerged` has been 0 against live data every time it's been checked so far. The first time it fires for real, the merge should be spot-checked before being trusted; don't tune the threshold without that evidence.
 
@@ -289,23 +304,38 @@ Every item also carries a Tier A/B/C badge recording how strong Microsoft's own 
 
 ## Frontend Features
 
-- 🔍 Full-text search — across title, description, category, type
-- 🏷️ Type filters — Preview, GA, Retirement, Breaking Change, Plan for Change
-- 📂 Service area filter — dropdown sourced live from `GET /taxonomy`, filters independently of the type filter above (e.g. "Conditional Access" + "Breaking" together). This line previously described "pills" that, as of the Phase 2 audit, did not actually exist in the code — corrected here to describe what's actually implemented (a `<select>`, not a pill row) rather than perpetuating the stale claim.
-- 📅 Date range picker — scope by time period
-- 📊 Stats bar — total items, breakdown by type
+- 🔍 Full-text search — a peer control in the unified filter bar, not a separate system
+- 🎛️ **Unified filter bar** — one control surface, one visual vocabulary (a shared `.chip` toggle component), for urgency, change type, and service area, all multi-select and freely combinable (e.g. "Urgent" + "Conditional Access" together expresses the whole query in two clicks). Replaces what used to be three disconnected mechanisms (a 12-checkbox environment panel, a status-button-row + two `<select>`s, and search) with one mental model. See "Frontend redesign" below for the full rationale.
+- 🏷️ Active-filters pill strip — every applied filter, from every axis, renders as its own removable pill directly under the bar, plus a single "Clear all" — no hidden state; what's applied is always fully enumerated in one place
+- 📂 Service area chips — sourced live from `GET /taxonomy`, multi-select (previously a single-select `<select>`)
+- 📊 Stats dashboard — informational tiles (urgent/plan-now/on-radar/expired counts, plus an External ID summary and a "matches my environment" count); no longer double as filter buttons, since that was one of the three disconnected filter systems the redesign removes — the chips in the filter bar are now the only filter control
 - 🔗 Crosslinks to aboutcloud.io and entraerrors.aboutcloud.io
-- 🌙 Dark theme (Entra-inspired)
+- 🌙 Dark theme (Entra-inspired), consolidated design tokens (see "Frontend redesign" below)
 - 📣 Announced date display — cards without a deadline show "Announced Mon YYYY" instead of an empty right panel
 - 🔃 Newest-announced sort — sort the entire feed by `announcedDate` descending to see what's freshest
-- ⭐ On Radar (client-side watchlist) — star any item to add it to your personal watchlist; persisted in `localStorage` under key `entratracker_radar`; filter to starred items with the "On Radar" toggle; cross-device sync is out of scope (see ROADMAP.md)
-- 📡 Subscribe / Export — popover button surfacing RSS feeds (full and External ID), CSV export, and JSON API with one-click copy-to-clipboard for pasting into RSS readers, Teams, Power Automate, and spreadsheets
-- 🅰️ Evidence tier badge (Tier A/B/C) on every card — how strong Microsoft's own signal was; see the `/methodology` section for what each tier means
-- ⏳ Deadline confidence hedge — cards with an `'inferred'`-confidence deadline show the date plainly ("possible date … unconfirmed") instead of a countdown, since a countdown implies more certainty than the source text actually supports
-- 📊 Methodology section — collapsible, plain-language explanation of evidence tiers and deadline confidence, written for an Entra admin rather than a developer; now also includes a coverage statement listing every service area the tracker covers, sourced from the same taxonomy as the filter dropdown
+- ⭐ On Radar (client-side watchlist) — star any item (now a button inside each card's summary row that won't also expand/collapse the card) to add it to your personal watchlist; persisted in `localStorage` under key `entratracker_radar`; filter with the "On Radar" chip; cross-device sync is out of scope (see ROADMAP.md)
+- 📡 Subscribe / Export — popover button surfacing RSS feeds (full and External ID), a **Calendar (.ics)** subscription (new), CSV export, and JSON API with one-click copy-to-clipboard for pasting into RSS/calendar readers, Teams, Power Automate, and spreadsheets
+- 🅰️ Evidence tier badge (Tier A/B/C) on every card — how strong Microsoft's own signal was; the full evidence quote and source link now live in each card's expandable detail region (see "Card redesign" below), not always-visible, to keep the collapsed list scannable
+- ⏳ Deadline confidence hedge — cards with an `'inferred'`-confidence deadline show the date plainly ("possible date … unconfirmed") instead of a countdown, since a countdown implies more certainty than the source text actually supports; the same items get a leading `~` in the `.ics` feed
+- ↻ "Revised" badge — flags an item whose title has been reworded by Microsoft since it was first tracked (`titleHistory[]`, Phase 1). Styled and positioned as the slot a future deadline-slip signal (from the D1 revision store, a separate later work order) will extend, so that feature won't need another redesign.
+- 📊 Methodology section — collapsible, plain-language explanation of evidence tiers and deadline confidence, written for an Entra admin rather than a developer; includes a coverage statement listing every service area the tracker covers, sourced from the same taxonomy as the filter chips, and a section on the Microsoft 365 Roadmap source
 - ⚠️ Degraded-mode banner — appears only when a source hasn't updated normally, names it plainly ("hasn't updated normally this cycle"), no red-alert styling; disappears automatically once the source recovers
 - 🕓 Per-source status footer — last successful update time for every source, sourced from `GET /health`; a degraded source's stale timestamp is visually distinguished from the others
 - 🛰️ Roadmap announcements on cards (Phase 5) — a correlated Microsoft 365 Roadmap entry renders as a supplementary row (roadmap status, stated date, link), labelled a definite "Roadmap" tag for an explicit id match or a hedged "likely related" for a title/date similarity match; a `dateConflict` between the roadmap and another Microsoft source is shown as a plain, neutral badge rather than silently resolved
+
+### Frontend redesign
+
+A full visual and interaction redesign, fixing two specific problems rather than restyling for its own sake:
+
+**Motion discipline.** The previous design had 7+ infinitely-looping glow/pulse `@keyframes` — a breathing hero title and subtitle, a pulsing "live" dot, a glowing subscribe button, six looping stat-number glows — animating *at rest*, all the time, with nothing having changed. For a trustworthy-signal tool, that reads as decoration pretending the page is alive, which undercuts the actual point. All of it is deleted outright (not just unbound). What's left: `spin` on the loading state, sub-200ms hover/focus/press transitions, and a single one-shot `card-in` entrance that plays once per card each time the filtered list re-renders — motion that means "something changed," never "this page is alive." Urgency is now carried entirely by colour and weight. Every animation is neutralised under `prefers-reduced-motion: reduce`.
+
+**Card redesign.** Each card is now a native `<details>` element: a compact, scannable summary row (title, urgency strip, key badges, evidence tier, countdown, roadmap announcements) with a keyboard-accessible expandable region underneath holding the full description, the evidence quote and its source, service-area/source metadata, and a link into `/methodology`. Scanning 100 items no longer means 100 full-detail hero cards.
+
+**Design tokens.** Consolidated several near-duplicate CSS custom properties that meant the same thing under different names (`--surf`/`--surface2` → `--surface`/`--surface-2`; `--bdr`/`--border` (the latter previously unused) → `--border`; `--bdr-light` → `--border-soft`; `--text2`/`--muted` → `--text-muted`; `--dim` → `--text-dim`) into one name per role. The red/yellow/green/purple semantic palette was already non-duplicated and is untouched.
+
+**Accessibility.** Every interactive element (chips, buttons, links, inputs, card summaries) gets an explicit `:focus-visible` ring rather than relying on (or, in one case — the search input — actively suppressing) the browser default. Filter chips are real `<button>` elements with `aria-pressed` reflecting their toggle state, so a screen reader announces them correctly as toggles, not decorative labels.
+
+**"My environment" panel.** The old 12-checkbox "Tenant Profile" is reframed, not deleted: relabelled "My environment," its copy now states plainly that it's a rough, self-declared, keyword-based approximation — explicitly staged as the future entry point for a real client-side tenant overlay (delegated Microsoft Graph access), which is out of scope for this work order. Its match result now surfaces as a "Matches my environment" chip in the unified bar and folds into the same active-filters pill strip as every other filter, rather than being a fourth parallel system.
 
 ---
 

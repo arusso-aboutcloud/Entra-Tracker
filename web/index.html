@@ -25,39 +25,41 @@
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── Design tokens ─────────────────────────────────────────────────────────
+   Consolidated (frontend redesign): previously had near-duplicate neutrals
+   (--surf/--surface2, --bdr/--border, --text2/--muted, --dim vs nothing)
+   defined for the same visual role under different names. Now one name per
+   role. Semantic accent colours (--red/--yel/--grn/--pur, each already a
+   single non-duplicated family) are untouched. */
 :root {
-  --bg:        #0d1117;
-  --nav:       #161b22;
-  --surf:      #161b22;
-  --surf2:     #1c2128;
-  --surface2:  #1a2332;
-  --bdr:       #30363d;
-  --bdr-light: #21262d;
-  --border:    rgba(255,255,255,0.07);
-  --border2:   rgba(255,255,255,0.13);
-  --border3:   rgba(255,255,255,0.22);
-  --text:      #e6edf3;
-  --text2:     #8b949e;
-  --muted:     #8b949e;
-  --dim:       #484f58;
-  --accent:    #58a6ff;
-  --red:       #ff7b72;
-  --red-bg:    rgba(255,123,114,.12);
-  --red-bdr:   rgba(255,123,114,.3);
-  --yel:       #e3b341;
-  --yel-bg:    rgba(227,179,65,.12);
-  --yel-bdr:   rgba(227,179,65,.3);
-  --grn:       #3fb950;
-  --grn-bg:    rgba(63,185,80,.12);
-  --grn-bdr:   rgba(63,185,80,.3);
-  --pur:       #bc8cff;
-  --pur-bg:    rgba(188,140,255,.12);
-  --pur-bdr:   rgba(188,140,255,.3);
-  --grey-bg:   rgba(139,148,158,.1);
-  --r:         10px;
-  --f:         'DM Sans', system-ui, sans-serif;
-  --fd:        'Chakra Petch', sans-serif;
-  --fm:        'DM Mono', 'Fira Code', monospace;
+  --bg:            #0d1117;
+  --surface:       #161b22;
+  --surface-2:     #1c2128;
+  --border:        #30363d;
+  --border-soft:   #21262d;
+  --border-strong: rgba(255,255,255,.22);
+  --text:          #e6edf3;
+  --text-muted:    #8b949e;
+  --text-dim:      #484f58;
+  --accent:        #58a6ff;
+  --accent-bg:     rgba(88,166,255,.12);
+  --red:           #ff7b72;
+  --red-bg:        rgba(255,123,114,.12);
+  --red-bdr:       rgba(255,123,114,.3);
+  --yel:           #e3b341;
+  --yel-bg:        rgba(227,179,65,.12);
+  --yel-bdr:       rgba(227,179,65,.3);
+  --grn:           #3fb950;
+  --grn-bg:        rgba(63,185,80,.12);
+  --grn-bdr:       rgba(63,185,80,.3);
+  --pur:           #bc8cff;
+  --pur-bg:        rgba(188,140,255,.12);
+  --pur-bdr:       rgba(188,140,255,.3);
+  --grey-bg:       rgba(139,148,158,.1);
+  --r:             10px;
+  --f:             'DM Sans', system-ui, sans-serif;
+  --fd:            'Chakra Petch', sans-serif;
+  --fm:            'DM Mono', 'Fira Code', monospace;
 }
 
 html { font-size: 16px; }
@@ -69,8 +71,40 @@ body {
   line-height: 1.5;
 }
 
-/* ── Top nav ── */
-/* ── Header (matching entra-errors style) ── */
+/* ── Motion discipline ────────────────────────────────────────────────────
+   Only three kinds of motion exist anywhere in this page:
+     1. `spin` on the loading spinner (state: working).
+     2. Sub-200ms transitions on hover/focus/press for interactive elements.
+     3. A single one-shot `card-in` entrance on freshly-rendered cards --
+        plays once per DOM node, never loops, and exists specifically so a
+        filter change is felt, not just read. Nothing here loops forever.
+   Every infinite glow/pulse animation from the previous design (hero title,
+   hero subtitle, the "live" dot, the subscribe button, all six stat-number
+   glows) has been removed outright -- not just unbound, deleted -- because
+   forever-looping decoration reads as "this page is alive," which undercuts
+   a tool whose whole value is trustworthy signal. Urgency is carried by
+   colour and weight now, not motion. */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+
+/* ── Focus visibility (accessibility) ────────────────────────────────────
+   Every interactive element gets an explicit, branded focus ring on
+   keyboard focus. `:focus-visible` (not bare `:focus`) so mouse clicks
+   don't show a ring that keyboard navigation needs. */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+summary:focus-visible, .chip:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Top nav / header ── */
 .hdr {
   max-width: 1400px; margin: 0 auto;
   padding: 0 48px;
@@ -80,19 +114,14 @@ body {
 }
 
 .brand { display: flex; align-items: center; gap: 22px; text-decoration: none; }
-
 .brand-logo { height: 100px; width: auto; }
-
-.brand-sep { width: 1px; height: 40px; background: var(--border3); }
-
+.brand-sep { width: 1px; height: 40px; background: var(--border-strong); }
 .brand-info { display: flex; flex-direction: column; gap: 5px; }
-
 .brand-name {
   font-family: var(--fd);
   font-size: 1.45rem; font-weight: 600;
   color: var(--text); letter-spacing: 0.01em; line-height: 1;
 }
-
 .brand-sub {
   font-family: var(--fm); font-size: 12px;
   color: var(--accent); letter-spacing: 0.08em;
@@ -100,14 +129,12 @@ body {
 }
 
 nav { display: flex; align-items: center; gap: 6px; }
-
 nav a {
-  font-size: 15px; color: var(--text2);
+  font-size: 15px; color: var(--text-muted);
   text-decoration: none; padding: 9px 18px;
-  border-radius: 8px; transition: all 0.15s;
+  border-radius: 8px; transition: color 0.15s, background 0.15s;
 }
-
-nav a:hover { color: var(--text); background: var(--surface2); }
+nav a:hover { color: var(--text); background: var(--surface-2); }
 nav a.active { color: var(--accent); font-weight: 600; }
 
 /* ── Page wrapper ── */
@@ -115,16 +142,6 @@ nav a.active { color: var(--accent); font-weight: 600; }
   max-width: 1400px;
   margin: 0 auto;
   padding: 2.5rem 3rem 5rem;
-}
-
-/* ── Hero glow animations ── */
-@keyframes tracker-title-glow {
-  0%, 100% { text-shadow: 0 0 8px rgba(230,237,243,0.95), 0 0 22px rgba(230,237,243,0.65), 0 0 50px rgba(230,237,243,0.3); }
-  50%       { text-shadow: 0 0 4px rgba(230,237,243,0.45), 0 0 10px rgba(230,237,243,0.2),  0 0 22px rgba(230,237,243,0.08); }
-}
-@keyframes tracker-sub-glow {
-  0%, 100% { text-shadow: 0 0 8px rgba(88,166,255,0.85),  0 0 20px rgba(88,166,255,0.45), 0 0 45px rgba(88,166,255,0.2); }
-  50%       { text-shadow: 0 0 4px rgba(88,166,255,0.35), 0 0 10px rgba(88,166,255,0.12), 0 0 18px rgba(88,166,255,0.04); }
 }
 
 /* ── Hero header ── */
@@ -136,29 +153,10 @@ nav a.active { color: var(--accent); font-weight: 600; }
   gap: 1.5rem;
   margin-bottom: 2.5rem;
   padding-bottom: 2rem;
-  border-bottom: 1px solid var(--bdr);
+  border-bottom: 1px solid var(--border);
 }
 
-.hero-left {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.hero-logo {
-  width: 72px;
-  height: 72px;
-  object-fit: contain;
-  flex-shrink: 0;
-}
-.hero-logo-wide {
-  width: 380px;
-  height: auto;
-  max-height: 140px;
-  object-fit: contain;
-  flex-shrink: 0;
-}
-
+.hero-left { display: flex; align-items: center; gap: 1rem; }
 
 .hero-title {
   font-family: var(--fd);
@@ -168,29 +166,22 @@ nav a.active { color: var(--accent); font-weight: 600; }
   color: var(--text);
   line-height: 1.1;
   margin-bottom: 0.3rem;
-  animation: tracker-title-glow 3s ease-in-out infinite;
 }
 
 .hero-sub {
   font-family: var(--fm);
   font-size: 1.2rem;
-  color: var(--muted);
-  animation: tracker-sub-glow 3s ease-in-out infinite 0.4s;
+  color: var(--text-muted);
 }
 
-.hero-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.4rem;
-}
+.hero-right { display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
 
 .hero-updated {
   font-family: var(--fm);
   font-size: 0.82rem;
-  color: var(--muted);
-  background: var(--surf);
-  border: 1px solid var(--bdr);
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
   padding: 0.4rem 1rem;
   border-radius: 6px;
 }
@@ -203,17 +194,15 @@ nav a.active { color: var(--accent); font-weight: 600; }
   font-size: 0.75rem;
   color: var(--grn);
 }
-
+/* Static dot, no pulse -- "auto-refreshes" is communicated by the text
+   label, not by motion pretending the page itself is alive. */
 .hero-live::before {
   content: '';
   width: 7px; height: 7px;
   border-radius: 50%;
   background: var(--grn);
-  box-shadow: 0 0 8px var(--grn);
-  animation: pulse 2s infinite;
+  box-shadow: 0 0 6px var(--grn);
 }
-
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
 
 /* ── Subscribe / Export popover ── */
 .subscribe-wrap { position: relative; }
@@ -224,172 +213,133 @@ nav a.active { color: var(--accent); font-weight: 600; }
   letter-spacing: 0.09em; text-transform: uppercase;
   padding: 0.55rem 1.4rem;
   border: 1.5px solid var(--accent);
-  border-radius: 999px;               /* round pill */
+  border-radius: 999px;
   color: #d6ebff;
-  background: linear-gradient(135deg, rgba(88,166,255,.22), rgba(88,166,255,.06));
+  background: rgba(88,166,255,.14);
   cursor: pointer; white-space: nowrap;
-  box-shadow: 0 0 8px rgba(88,166,255,.45), 0 0 18px rgba(88,166,255,.25), inset 0 0 10px rgba(88,166,255,.15);
-  transition: box-shadow .25s ease, background .25s ease, transform .15s ease, color .25s ease;
-  animation: sub-glow 2.8s ease-in-out infinite;
+  transition: background 0.15s ease, transform 0.1s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
-
-@keyframes sub-glow {
-  0%, 100% { box-shadow: 0 0 6px rgba(88,166,255,.35), 0 0 14px rgba(88,166,255,.2),  inset 0 0 8px rgba(88,166,255,.12); }
-  50%      { box-shadow: 0 0 14px rgba(88,166,255,.7), 0 0 30px rgba(88,166,255,.4), inset 0 0 14px rgba(88,166,255,.25); }
-}
-
 .subscribe-btn:hover {
-  background: linear-gradient(135deg, rgba(88,166,255,.35), rgba(88,166,255,.14));
+  background: rgba(88,166,255,.24);
   color: #fff;
-  box-shadow: 0 0 18px rgba(88,166,255,.85), 0 0 40px rgba(88,166,255,.5), inset 0 0 16px rgba(88,166,255,.3);
   transform: translateY(-1px);
-  animation: none;
+  box-shadow: 0 0 0 3px rgba(88,166,255,.15);
 }
-
 .subscribe-btn:active { transform: translateY(0); }
-
 .subscribe-btn[aria-expanded="true"] {
-  background: linear-gradient(135deg, rgba(88,166,255,.4), rgba(88,166,255,.16));
-  box-shadow: 0 0 16px rgba(88,166,255,.8), 0 0 36px rgba(88,166,255,.45), inset 0 0 16px rgba(88,166,255,.3);
-  animation: none;
+  background: rgba(88,166,255,.28);
+  box-shadow: 0 0 0 3px rgba(88,166,255,.2);
 }
-
-@media (prefers-reduced-motion: reduce) { .subscribe-btn { animation: none; } }
 
 .subscribe-pop {
   position: absolute; right: 0; top: calc(100% + 8px); z-index: 50;
-  width: 340px; max-width: 86vw;
-  background: var(--surf); border: 1px solid var(--bdr);
+  width: 360px; max-width: 86vw;
+  background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r); padding: 0.5rem;
   box-shadow: 0 10px 30px rgba(0,0,0,.4);
 }
-
 .subscribe-pop[hidden] { display: none; }
 
 .sub-pop-title {
   font-family: var(--fm); font-size: 0.7rem; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--muted);
+  letter-spacing: 0.06em; color: var(--text-muted);
   padding: 0.35rem 0.5rem 0.5rem;
 }
 
 .sub-row {
   display: flex; align-items: center; justify-content: space-between;
   gap: 0.75rem; padding: 0.6rem 0.5rem;
-  border-top: 1px solid var(--bdr);
+  border-top: 1px solid var(--border);
 }
-
 .sub-row-label { font-family: var(--fd); font-size: 0.9rem; color: var(--text); }
-
-.sub-row-desc  { font-family: var(--fm); font-size: 0.7rem; color: var(--muted); line-height: 1.4; margin-top: 0.15rem; }
-
+.sub-row-desc  { font-family: var(--fm); font-size: 0.7rem; color: var(--text-muted); line-height: 1.4; margin-top: 0.15rem; }
 .sub-row-actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
 
 .sub-copy, .sub-open {
   font-family: var(--fm); font-size: 0.7rem;
   padding: 0.3rem 0.6rem; border-radius: 6px;
-  border: 1px solid var(--bdr); background: var(--surf);
+  border: 1px solid var(--border); background: var(--surface);
   color: var(--accent); cursor: pointer; text-decoration: none;
   transition: border-color 0.15s, background 0.15s;
   display: inline-block;
 }
-
 .sub-copy:hover, .sub-open:hover { border-color: var(--accent); }
-
 .sub-copy.copied { color: var(--grn); border-color: var(--grn-bdr); }
-
 .sub-row.primary { background: rgba(88,166,255,.06); border-radius: 6px; }
-
 .sub-row .sub-hint {
   font-family: var(--fm); font-size: 0.62rem; color: var(--grn);
   margin-top: 0.2rem; display: none;
 }
-
 .sub-row.primary .sub-hint { display: block; }
 
-/* ── Stats grid ── */
+/* ── Stats dashboard (informational only, Phase: redesign) ───────────────
+   These tiles used to double as single-select filter buttons -- one of the
+   three disconnected filter mechanisms this redesign removes. They are now
+   purely a glanceable dashboard: counts update live, but the ONLY way to
+   filter is the unified filter bar below. A tile lights up (via
+   data-urgency matching an active chip) to stay visually in sync, but is
+   not itself a click target -- avoids re-introducing a fourth semi-
+   redundant filter entry point. */
 .stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 1rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
-
 .stat-card {
-  background: var(--surf);
-  border: 1px solid var(--bdr);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--r);
-  padding: 1.5rem 1.75rem;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, transform 0.1s;
-  user-select: none;
+  padding: 1.4rem 1.75rem;
+  transition: border-color 0.15s;
 }
-
-.stat-card:hover { border-color: var(--accent); transform: translateY(-2px); }
-.stat-card.active { border-color: var(--accent); background: var(--surf2); }
-
+.stat-card.is-active-filter { border-color: var(--accent); background: var(--surface-2); }
 .stat-num {
   font-family: var(--fd);
-  font-size: 3rem;
+  font-size: 2.7rem;
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   margin-bottom: 0.4rem;
 }
-
+.stat-card.s-red  .stat-num { color: var(--red); }
+.stat-card.s-yel  .stat-num { color: var(--yel); }
+.stat-card.s-grn  .stat-num { color: var(--grn); }
+.stat-card.s-grey .stat-num { color: var(--text-muted); }
+.stat-card.s-blue .stat-num { color: var(--accent); }
 .stat-lbl {
   font-family: var(--fm);
-  font-size: 0.82rem;
-  color: var(--muted);
+  font-size: 0.8rem;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-/* ── Stat/countdown number glow animations ── */
-@keyframes sn-glow-red  { 0%,100%{text-shadow:0 0 6px rgba(255,123,114,1.0),0 0 18px rgba(255,123,114,0.85),0 0 45px rgba(255,123,114,0.5),0 0 70px rgba(255,123,114,0.2)} 50%{text-shadow:0 0 4px rgba(255,123,114,0.45),0 0 12px rgba(255,123,114,0.15)} }
-@keyframes sn-glow-yel  { 0%,100%{text-shadow:0 0 6px rgba(227,179,65,1.0), 0 0 18px rgba(227,179,65,0.85), 0 0 45px rgba(227,179,65,0.5), 0 0 70px rgba(227,179,65,0.2)}  50%{text-shadow:0 0 4px rgba(227,179,65,0.45), 0 0 12px rgba(227,179,65,0.15)} }
-@keyframes sn-glow-grn  { 0%,100%{text-shadow:0 0 6px rgba(63,185,80,1.0),  0 0 18px rgba(63,185,80,0.85),  0 0 45px rgba(63,185,80,0.5),  0 0 70px rgba(63,185,80,0.2)}   50%{text-shadow:0 0 4px rgba(63,185,80,0.45),  0 0 12px rgba(63,185,80,0.15)} }
-@keyframes sn-glow-grey { 0%,100%{text-shadow:0 0 6px rgba(139,148,158,0.95),0 0 18px rgba(139,148,158,0.7), 0 0 40px rgba(139,148,158,0.4), 0 0 65px rgba(139,148,158,0.15)} 50%{text-shadow:0 0 4px rgba(139,148,158,0.35),0 0 10px rgba(139,148,158,0.1)} }
-@keyframes sn-glow-blue { 0%,100%{text-shadow:0 0 6px rgba(88,166,255,1.0), 0 0 18px rgba(88,166,255,0.85), 0 0 45px rgba(88,166,255,0.5), 0 0 70px rgba(88,166,255,0.2)}  50%{text-shadow:0 0 4px rgba(88,166,255,0.45), 0 0 12px rgba(88,166,255,0.15)} }
-@keyframes sn-glow-purp { 0%,100%{text-shadow:0 0 6px rgba(192,132,252,1.0),0 0 18px rgba(192,132,252,0.85),0 0 45px rgba(192,132,252,0.5),0 0 70px rgba(192,132,252,0.2)} 50%{text-shadow:0 0 4px rgba(192,132,252,0.45),0 0 12px rgba(192,132,252,0.15)} }
-
-.stat-card.s-red  .stat-num    { color: var(--red);    animation: sn-glow-red  3s ease-in-out infinite; }
-  .stat-card.s-yel .stat-num    { color: var(--yel);    animation: sn-glow-yel  3s ease-in-out infinite 0.3s; }
-  .stat-card.s-grn .stat-num    { color: var(--grn);    animation: sn-glow-grn  3s ease-in-out infinite 0.6s; }
-  .stat-card.s-grey .stat-num   { color: var(--muted);  animation: sn-glow-grey 3s ease-in-out infinite 0.9s; }
-
-/* ── External ID namespace row ─────────────────────────────────────────── */
-.stat-extid-row {
-  margin-bottom: 1.5rem;
-}
-
+/* External ID namespace summary row -- informational dashboard, same
+   treatment as the stat tiles above. */
+.stat-extid-row { margin-bottom: 1.25rem; }
 .stat-card-extid {
   background: rgba(192,132,252,.06);
   border: 1px solid rgba(192,132,252,.25);
   border-radius: var(--r);
   padding: 1rem 1.75rem;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, transform 0.1s;
-  user-select: none;
   display: flex;
   align-items: center;
   gap: 1.5rem;
+  transition: border-color 0.15s;
 }
-.stat-card-extid:hover { border-color: #c084fc; transform: translateY(-2px); }
-.stat-card-extid.active { border-color: #c084fc; background: rgba(192,132,252,.1); }
-
+.stat-card-extid.is-active-filter { border-color: #c084fc; background: rgba(192,132,252,.1); }
 .extid-count {
   font-family: var(--fd);
-  font-size: 3rem; font-weight: 700; line-height: 1;
+  font-size: 2.7rem; font-weight: 700; line-height: 1;
   color: #c084fc; font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .extid-meta { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
 .extid-label {
   font-family: var(--fm); font-size: 0.82rem;
-  color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;
 }
-.extid-sublabel {
-  font-family: var(--fm); font-size: 0.72rem; color: var(--dim); line-height: 1.4;
-}
+.extid-sublabel { font-family: var(--fm); font-size: 0.72rem; color: var(--text-dim); line-height: 1.4; }
 .extid-urgency { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .extid-pill {
   font-family: var(--fm); font-size: 0.72rem;
@@ -410,7 +360,6 @@ nav a.active { color: var(--accent); font-weight: 600; }
   display: none;
 }
 .namespace-ctx.visible { display: block; }
-
 .ctx-header { display: flex; align-items: center; gap: 0.65rem; margin-bottom: 0.45rem; }
 .ctx-title { font-family: var(--fd); font-size: 0.95rem; font-weight: 600; color: #c084fc; }
 .ctx-tags { display: flex; gap: 0.35rem; flex-wrap: wrap; }
@@ -419,244 +368,302 @@ nav a.active { color: var(--accent); font-weight: 600; }
   background: rgba(192,132,252,.08); padding: 0.1rem 0.5rem;
   border-radius: 4px; border: 1px solid rgba(192,132,252,.25);
 }
-.ctx-desc {
-  font-family: var(--fm); font-size: 0.78rem; color: var(--muted);
-  line-height: 1.55; margin-bottom: 0.85rem;
-}
-
+.ctx-desc { font-family: var(--fm); font-size: 0.78rem; color: var(--text-muted); line-height: 1.55; margin-bottom: 0.85rem; }
 .ctx-urgency-row { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: center; }
 .ctx-urgency-item { display: flex; align-items: baseline; gap: 0.35rem; }
-.ctx-urgency-num {
-  font-family: var(--fd); font-size: 1.6rem; font-weight: 700; line-height: 1;
-}
-.ctx-urgency-lbl { font-family: var(--fm); font-size: 0.75rem; color: var(--muted); }
+.ctx-urgency-num { font-family: var(--fd); font-size: 1.6rem; font-weight: 700; line-height: 1; }
+.ctx-urgency-lbl { font-family: var(--fm); font-size: 0.75rem; color: var(--text-muted); }
 .ctx-urgency-item.u-red .ctx-urgency-num { color: var(--red); }
 .ctx-urgency-item.u-yel .ctx-urgency-num { color: var(--yel); }
 .ctx-urgency-item.u-grn .ctx-urgency-num { color: var(--grn); }
 .ctx-urgency-item.u-pur .ctx-urgency-num { color: #c084fc; }
-
 .ctx-divider { height: 1px; background: rgba(192,132,252,.1); margin: 0.85rem 0 0.75rem; }
-
-.ctx-all-clear {
-  display: none; align-items: center; gap: 0.5rem;
-  font-family: var(--fm); font-size: 0.8rem; color: var(--grn);
-}
+.ctx-all-clear { display: none; align-items: center; gap: 0.5rem; font-family: var(--fm); font-size: 0.8rem; color: var(--grn); }
 .ctx-all-clear.show { display: flex; }
 
-/* ── Controls ── */
-.controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-bottom: 1.25rem;
-}
-
-.fbtn {
-  font-family: var(--fm);
-  font-size: 0.85rem;
-  font-weight: 500;
-  padding: 0.5rem 1.2rem;
-  border-radius: 24px;
-  border: 1px solid var(--bdr);
-  background: var(--surf);
-  color: var(--muted);
-  cursor: pointer;
-  transition: all 0.15s;
-  letter-spacing: 0.03em;
-  white-space: nowrap;
-}
-
-.fbtn:hover { color: var(--text); border-color: var(--accent); }
-.fbtn.active { background: var(--accent); border-color: var(--accent); color: #0d1117; font-weight: 700; }
-.fbtn.copy-link-btn.copied { color: var(--grn); border-color: var(--grn-bdr); }
-
-.toggle-wrap {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-family: var(--fm);
-  font-size: 0.78rem;
-  color: var(--muted);
-  cursor: pointer;
-  user-select: none;
-}
-
-.toggle-wrap input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-.toggle-wrap:hover { color: var(--text); }
-
-.search-wrap {
-  margin-left: auto;
-  position: relative;
-}
-
-.search-wrap::before {
-  content: '⌕';
-  position: absolute;
-  left: 0.9rem; top: 50%;
-  transform: translateY(-50%);
-  color: var(--muted);
-  font-size: 1.1rem;
-  pointer-events: none;
-}
-
-.search-input {
-  font-family: var(--fm);
-  font-size: 0.85rem;
-  padding: 0.5rem 1rem 0.5rem 2.3rem;
-  border-radius: 24px;
-  border: 1px solid var(--bdr);
-  background: var(--surf);
-  color: var(--text);
-  width: 260px;
-  outline: none;
-  transition: border-color 0.15s, width 0.2s;
-}
-
-.search-input:focus { border-color: var(--accent); width: 380px; }
-.search-input::placeholder { color: var(--dim); }
-
-/* ── Legend ── */
-.legend {
-  background: var(--surf);
-  border: 1px solid var(--bdr);
+/* ── My environment panel (reframed from "Tenant Profile") ────────────────
+   Explicitly a rough, self-declared "does this affect me" -- a manual
+   pre-cursor to the real client-side tenant overlay (delegated Graph),
+   which is deliberately out of scope here. Its match result folds into the
+   SAME active-filters pill strip as every other filter -- not a fourth
+   parallel system. */
+.env-panel {
+  background: var(--surface);
+  border: 1px solid rgba(88,166,255,.25);
   border-radius: var(--r);
   margin-bottom: 1.5rem;
   overflow: hidden;
 }
+.env-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.75rem 1.25rem; cursor: pointer; user-select: none;
+  font-family: var(--fm); font-size: 0.8rem; color: var(--accent);
+  background: none; border: none; width: 100%; text-align: left;
+}
+.env-toggle:hover { opacity: 0.85; }
+.env-toggle-right { display: flex; align-items: center; gap: 0.75rem; }
+.env-badge {
+  font-family: var(--fm); font-size: 0.7rem;
+  color: var(--grn); background: var(--grn-bg);
+  border: 1px solid var(--grn-bdr);
+  padding: 0.15rem 0.6rem; border-radius: 4px;
+  display: none;
+}
+.env-badge.on { display: inline; }
+.env-toggle-icon { font-size: 0.7rem; transition: transform 0.15s; }
+.env-panel.open .env-toggle-icon { transform: rotate(180deg); }
+.env-body { padding: 1rem 1.25rem 1.25rem; border-top: 1px solid rgba(88,166,255,.12); display: none; }
+.env-panel.open .env-body { display: block; }
+.env-intro { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.55; }
+.env-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.55rem 1.5rem; margin-bottom: 1rem; }
+.env-item { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+.env-item input[type="checkbox"] { width: 14px; height: 14px; cursor: pointer; accent-color: var(--accent); flex-shrink: 0; }
+.env-item label { font-family: var(--fm); font-size: 0.77rem; color: var(--text); cursor: pointer; line-height: 1.3; }
+.env-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }
+.env-save {
+  font-family: var(--fm); font-size: 0.78rem;
+  padding: 0.4rem 1rem; border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: rgba(88,166,255,.1); color: var(--accent);
+  cursor: pointer; transition: background 0.15s;
+}
+.env-save:hover { background: rgba(88,166,255,.2); }
+.env-reset {
+  font-family: var(--fm); font-size: 0.72rem; color: var(--text-muted);
+  background: none; border: none; cursor: pointer;
+  text-decoration: underline; transition: color 0.15s;
+}
+.env-reset:hover { color: var(--text); }
+.env-note { font-family: var(--fm); font-size: 0.7rem; color: var(--text-dim); margin-top: 0.75rem; line-height: 1.5; }
+@media (max-width: 640px) { .env-grid { grid-template-columns: repeat(2, 1fr); } }
 
-.legend-toggle {
+/* ── Unified filter bar (A2) ───────────────────────────────────────────────
+   One coherent control surface, one visual vocabulary (the .chip component)
+   for every filter axis -- urgency, type, service area, and the special
+   namespace/radar/environment toggles. Every active chip renders as a
+   removable pill in the strip directly below. Search and sort live in the
+   same bar as peers, not a separate system. */
+.filter-bar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.85rem;
+}
+.filter-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1.25rem;
-  cursor: pointer;
-  user-select: none;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.filter-row + .filter-row { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border-soft); }
+.filter-group { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.filter-group-label {
+  font-family: var(--fm); font-size: 0.68rem; font-weight: 600;
+  color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.07em;
+  margin-right: 0.15rem; white-space: nowrap;
+}
+
+/* One chip component, shared by every axis. Toggle semantics throughout:
+   aria-pressed reflects state for assistive tech. */
+.chip {
   font-family: var(--fm);
   font-size: 0.8rem;
-  color: var(--muted);
-  transition: color 0.15s;
-  list-style: none;
+  font-weight: 500;
+  padding: 0.42rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  line-height: 1.3;
 }
+.chip:hover { color: var(--text); border-color: var(--text-dim); }
 
-.legend-toggle:hover { color: var(--text); }
-.legend-toggle::marker { display: none; }
+/* Active-state colour follows the chip's own semantic family. */
+.chip[aria-pressed="true"] { font-weight: 600; }
+.chip.c-red[aria-pressed="true"]    { background: var(--red-bg); border-color: var(--red-bdr); color: var(--red); }
+.chip.c-yel[aria-pressed="true"]    { background: var(--yel-bg); border-color: var(--yel-bdr); color: var(--yel); }
+.chip.c-grn[aria-pressed="true"]    { background: var(--grn-bg); border-color: var(--grn-bdr); color: var(--grn); }
+.chip.c-grey[aria-pressed="true"]   { background: var(--grey-bg); border-color: var(--border); color: var(--text); }
+.chip.c-accent[aria-pressed="true"] { background: var(--accent-bg); border-color: rgba(88,166,255,.4); color: var(--accent); }
+.chip.c-purple[aria-pressed="true"] { background: rgba(192,132,252,.12); border-color: rgba(192,132,252,.4); color: #c084fc; }
+.chip.c-amber[aria-pressed="true"]  { background: rgba(227,179,65,.12); border-color: rgba(227,179,65,.4); color: #e3b341; }
 
-.legend-toggle-icon {
-  font-size: 0.7rem;
-  transition: transform 0.2s;
+.filter-bar-tools { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-left: auto; }
+
+.sort-sel {
+  font-family: var(--fm);
+  font-size: 0.8rem;
+  padding: 0.42rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
 }
+.sort-sel:hover, .sort-sel:focus { border-color: var(--accent); color: var(--text); }
 
-details[open] .legend-toggle-icon { transform: rotate(180deg); }
-
-.legend-body {
-  padding: 0 1.25rem 1.25rem;
-  border-top: 1px solid var(--bdr-light);
+.search-wrap { position: relative; }
+.search-wrap::before {
+  content: '⌕';
+  position: absolute;
+  left: 0.85rem; top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 1.05rem;
+  pointer-events: none;
 }
-
-.legend-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.75rem 2rem;
-  margin-top: 1rem;
+.search-input {
+  font-family: var(--fm);
+  font-size: 0.8rem;
+  padding: 0.42rem 0.9rem 0.42rem 2.2rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  width: 220px;
+  outline: none;
+  transition: border-color 0.15s, width 0.2s;
 }
+.search-input:focus { border-color: var(--accent); width: 300px; }
+.search-input::placeholder { color: var(--text-dim); }
 
-.legend-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+.toggle-wrap {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-family: var(--fm); font-size: 0.78rem; color: var(--text-muted);
+  cursor: pointer; user-select: none;
 }
+.toggle-wrap input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.toggle-wrap:hover { color: var(--text); }
 
-.legend-item-header {
-  display: flex;
+.copy-link-btn {
+  font-family: var(--fm); font-size: 0.8rem;
+  padding: 0.42rem 0.9rem; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-muted); cursor: pointer; transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.copy-link-btn:hover { color: var(--text); border-color: var(--accent); }
+.copy-link-btn.copied { color: var(--grn); border-color: var(--grn-bdr); }
+
+/* ── Active-filters pill strip ────────────────────────────────────────────
+   Every active filter, from every axis (including a My Environment match),
+   shows up here as one removable pill. No hidden state -- what's applied
+   is always fully enumerated in one place. */
+.active-filters {
+  display: none;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
+  padding: 0.7rem 1.25rem;
+  margin-bottom: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r);
 }
-
-.legend-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
+.active-filters.visible { display: flex; }
+.active-filters-label {
+  font-family: var(--fm); font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-dim); margin-right: 0.15rem;
 }
-
-.legend-dot.red    { background: var(--red);   box-shadow: 0 0 5px var(--red); }
-.legend-dot.yellow { background: var(--yel);   box-shadow: 0 0 5px var(--yel); }
-.legend-dot.green  { background: var(--grn);   box-shadow: 0 0 5px var(--grn); }
-
-.legend-badge-name {
-  font-family: var(--fm);
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.pill {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-family: var(--fm); font-size: 0.75rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.75rem;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  border: 1px solid rgba(88,166,255,.3);
+  color: var(--accent);
 }
-
-.legend-desc {
-  font-family: var(--fm);
-  font-size: 0.72rem;
-  color: var(--muted);
-  line-height: 1.5;
-  padding-left: 1.25rem;
+.pill-remove {
+  background: none; border: none; color: inherit; cursor: pointer;
+  font-size: 0.85rem; line-height: 1; padding: 0.05rem 0.15rem;
+  border-radius: 50%; transition: background 0.15s;
 }
-
-.legend-divider {
-  grid-column: 1 / -1;
-  border: none;
-  border-top: 1px solid var(--bdr-light);
-  margin: 0.25rem 0;
+.pill-remove:hover { background: rgba(88,166,255,.2); }
+.clear-all-btn {
+  font-family: var(--fm); font-size: 0.75rem; color: var(--text-muted);
+  background: none; border: none; cursor: pointer; text-decoration: underline;
+  margin-left: 0.25rem; transition: color 0.15s;
 }
+.clear-all-btn:hover { color: var(--text); }
 
-@media (max-width: 640px) {
-  .legend-grid { grid-template-columns: 1fr; }
+/* ── Legend ── */
+.legend { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); margin-bottom: 1.5rem; overflow: hidden; }
+.legend-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.75rem 1.25rem; cursor: pointer; user-select: none;
+  font-family: var(--fm); font-size: 0.8rem; color: var(--text-muted);
+  transition: color 0.15s; list-style: none;
 }
+.legend-toggle:hover { color: var(--text); }
+.legend-toggle::marker, .legend-toggle::-webkit-details-marker { display: none; }
+.legend-toggle-icon { font-size: 0.7rem; transition: transform 0.15s; }
+details[open] > .legend-toggle-icon,
+details[open] .legend-toggle .legend-toggle-icon { transform: rotate(180deg); }
+.legend-body { padding: 0 1.25rem 1.25rem; border-top: 1px solid var(--border-soft); }
+.legend-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem 2rem; margin-top: 1rem; }
+.legend-item { display: flex; flex-direction: column; gap: 0.2rem; }
+.legend-item-header { display: flex; align-items: center; gap: 0.5rem; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.legend-dot.red    { background: var(--red); }
+.legend-dot.yellow { background: var(--yel); }
+.legend-dot.green  { background: var(--grn); }
+.legend-badge-name { font-family: var(--fm); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.legend-desc { font-family: var(--fm); font-size: 0.72rem; color: var(--text-muted); line-height: 1.5; padding-left: 1.25rem; }
+.legend-divider { grid-column: 1 / -1; border: none; border-top: 1px solid var(--border-soft); margin: 0.25rem 0; }
+@media (max-width: 640px) { .legend-grid { grid-template-columns: 1fr; } }
 
 /* ── Count label ── */
-.count-lbl {
-  font-family: var(--fm);
-  font-size: 0.82rem;
-  color: var(--muted);
-  margin-bottom: 1rem;
-}
-
+.count-lbl { font-family: var(--fm); font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem; }
 .count-lbl strong { color: var(--accent); }
 
-/* ── Entry list ── */
-.entry-list { display: flex; flex-direction: column; gap: 0.65rem; }
+/* ── Entry list / cards (redesigned as <details> for a per-card expandable
+   detail region -- native disclosure semantics: keyboard-accessible,
+   correct default ARIA, no custom JS needed for open/close) ────────────── */
+.entry-list { display: flex; flex-direction: column; gap: 0.6rem; }
 
 .entry {
-  display: grid;
-  grid-template-columns: 4px 1fr auto;
-  background: var(--surf);
-  border: 1px solid var(--bdr-light);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
   border-radius: var(--r);
   overflow: hidden;
   transition: border-color 0.15s, background 0.15s;
+  animation: card-in 0.22s ease-out;
 }
+.entry:hover { border-color: var(--border); background: var(--surface-2); }
 
-.entry:hover { border-color: var(--bdr); background: var(--surf2); }
+.entry-summary {
+  display: grid;
+  grid-template-columns: 4px 1fr auto auto;
+  align-items: stretch;
+  cursor: pointer;
+  list-style: none;
+}
+.entry-summary::marker, .entry-summary::-webkit-details-marker { display: none; }
 
 .entry-strip { flex-shrink: 0; }
 .entry.s-red    .entry-strip { background: var(--red); }
 .entry.s-yel    .entry-strip { background: var(--yel); }
 .entry.s-grn    .entry-strip { background: var(--grn); }
-.entry.s-exp    .entry-strip { background: var(--dim); }
+.entry.s-exp    .entry-strip { background: var(--text-dim); }
 .entry.s-exp-recent .entry-strip { background: var(--red); }
 
-.entry-body { padding: 1.25rem 1.5rem; min-width: 0; }
+.entry-main { padding: 1.1rem 1.25rem; min-width: 0; }
 
+.entry-title-row { display: flex; align-items: flex-start; gap: 0.6rem; margin-bottom: 0.35rem; }
 .entry-title {
   font-family: var(--fd);
-  font-size: 1.05rem;
+  font-size: 1.02rem;
   font-weight: 600;
   color: var(--text);
-  margin: 0 0 0.4rem;
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -664,13 +671,13 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
   overflow: hidden;
 }
 
-.entry-desc {
-  font-size: 0.88rem;
-  color: var(--muted);
-  line-height: 1.6;
-  margin: 0 0 0.65rem;
+.entry-desc-preview {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin: 0 0 0.6rem;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -679,7 +686,7 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
 
 .badge {
   font-family: var(--fm);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 500;
   padding: 0.2rem 0.6rem;
   border-radius: 4px;
@@ -688,161 +695,149 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
   letter-spacing: 0.05em;
   white-space: nowrap;
 }
-
 .badge.c-retirement { color:var(--red); background:var(--red-bg); border-color:var(--red-bdr); }
 .badge.c-breaking   { color:var(--yel); background:var(--yel-bg); border-color:var(--yel-bdr); }
 .badge.c-preview    { color:var(--pur); background:var(--pur-bg); border-color:var(--pur-bdr); }
 .badge.c-new_feature{ color:var(--grn); background:var(--grn-bg); border-color:var(--grn-bdr); }
 .badge.i-high       { color:var(--red); background:var(--red-bg); border-color:var(--red-bdr); }
 .badge.i-medium     { color:var(--yel); background:var(--yel-bg); border-color:var(--yel-bdr); }
-.badge.i-low        { color:var(--muted); background:var(--grey-bg); border-color:var(--bdr); }
+.badge.i-low        { color:var(--text-muted); background:var(--grey-bg); border-color:var(--border); }
+.badge.tier-a { color:var(--accent); background:var(--accent-bg); border-color:rgba(88,166,255,.3); }
+.badge.tier-b { color:var(--text-muted);  background:var(--grey-bg); border-color:var(--border); }
+.badge.tier-c { color:var(--text-dim);    background:var(--grey-bg); border-color:var(--border-soft); }
+.badge.i-tenant       { color: var(--accent); background: var(--accent-bg); border-color: rgba(88,166,255,.3); }
+.badge.i-new-recent   { color: var(--grn); background: var(--grn-bg); border-color: var(--grn-bdr); }
+.badge.i-external-id  { color: #c084fc; background: rgba(192,132,252,.1); border-color: rgba(192,132,252,.3); }
+.badge.i-dateconflict { color: var(--yel); background: var(--grey-bg); border-color: var(--border); }
+/* "Recently moved" slot (A3): the read-side deadline-slip signal lands in a
+   later work order against the D1 revision store -- this badge is wired to
+   the one real signal already available today, a reworded title
+   (titleHistory[]), and is styled/positioned to accept a real "deadline
+   moved" trigger later without another redesign. */
+.badge.i-revised { color: var(--pur); background: var(--pur-bg); border-color: var(--pur-bdr); }
 
-/* Evidence tier -- how strong Microsoft's own signal was for this item's
-   classification. See the Methodology section for the plain-language version. */
-.badge.tier-a { color:var(--accent); background:rgba(88,166,255,.12); border-color:rgba(88,166,255,.3); }
-.badge.tier-b { color:var(--muted);  background:var(--grey-bg);       border-color:var(--bdr); }
-.badge.tier-c { color:var(--dim);    background:var(--grey-bg);       border-color:var(--bdr-light); }
-
-/* Hedge shown instead of a countdown when deadlineConfidence is 'inferred' --
-   a date the tracker found but isn't confident enough about to count down to. */
-.cd-hedge {
-  font-family: var(--fm);
-  font-size: 0.72rem;
-  color: var(--muted);
-  text-align: right;
-  line-height: 1.4;
-  max-width: 8rem;
+.radar-btn {
+  background: none; border: 1px solid var(--border-soft); color: var(--text-muted);
+  width: 26px; height: 26px; border-radius: 6px; cursor: pointer;
+  font-size: 0.88rem; transition: border-color 0.15s, color 0.15s, background 0.15s;
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  line-height: 1; padding: 0;
 }
-.cd-hedge .cd-hedge-date { color: var(--text); font-weight: 500; }
+.radar-btn:hover { border-color: #e3b341; color: #e3b341; }
+.radar-btn.on    { border-color: #e3b341; color: #e3b341; background: rgba(227,179,65,.1); }
+
+/* Roadmap announcements -- always visible (not gated behind the expand),
+   since a dateConflict/roadmap link is a trust signal worth surfacing
+   immediately, not a "read more" detail. */
+.entry-announcements {
+  margin: 0.5rem 0 0;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+  display: flex; flex-direction: column; gap: 0.35rem;
+}
+.announcement-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; font-family: var(--fm); font-size: 0.72rem; color: var(--text-muted); }
+.announcement-basis { font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.68rem; }
+.announcement-basis.exact { color: var(--accent); }
+.announcement-basis.likely { color: var(--text-dim); font-style: italic; }
+.announcement-row a.lnk { font-size: 0.72rem; }
+
+.entry-caret {
+  align-self: center;
+  padding: 0 1rem;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  transition: transform 0.15s;
+}
+details[open] > .entry-summary .entry-caret { transform: rotate(180deg); }
 
 .lnk {
-  font-family: var(--fm);
-  font-size: 0.72rem;
-  color: var(--accent);
-  text-decoration: none;
-  padding: 0.2rem 0.6rem;
-  border-radius: 4px;
-  border: 1px solid rgba(88,166,255,.2);
-  transition: background 0.15s;
-  white-space: nowrap;
+  font-family: var(--fm); font-size: 0.72rem; color: var(--accent);
+  text-decoration: none; padding: 0.2rem 0.6rem; border-radius: 4px;
+  border: 1px solid rgba(88,166,255,.2); transition: background 0.15s;
+  white-space: nowrap; display: inline-block;
 }
-
 .lnk:hover { background: rgba(88,166,255,.12); border-color: var(--accent); }
 .lnk.art { color: var(--grn); border-color: rgba(63,185,80,.2); }
 .lnk.art:hover { background: rgba(63,185,80,.12); border-color: var(--grn); }
 
+/* Expandable detail region -- full description, evidence quote + source,
+   service area / source metadata, methodology deep-link. Density: the
+   summary row stays scannable; this is where the depth lives. */
+.entry-detail {
+  padding: 0 1.25rem 1.1rem 1.6rem;
+  border-top: 1px solid var(--border-soft);
+  margin-top: -1px;
+}
+.entry-detail-desc { font-size: 0.85rem; color: var(--text-muted); line-height: 1.65; padding-top: 0.9rem; margin-bottom: 0.75rem; }
+.entry-evidence {
+  font-family: var(--fm); font-size: 0.75rem; color: var(--text-muted);
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+  border-radius: 6px; padding: 0.6rem 0.8rem; line-height: 1.6; margin-bottom: 0.75rem;
+}
+.entry-evidence-label { color: var(--text-dim); text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.06em; margin-bottom: 0.3rem; }
+.entry-meta-line { font-family: var(--fm); font-size: 0.74rem; color: var(--text-dim); margin-bottom: 0.75rem; line-height: 1.6; }
+.entry-detail-links { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.methodology-link {
+  font-family: var(--fm); font-size: 0.72rem; color: var(--text-muted);
+  background: none; border: 1px solid var(--border); padding: 0.2rem 0.6rem;
+  border-radius: 4px; cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.methodology-link:hover { color: var(--accent); border-color: var(--accent); }
+
 /* Countdown */
 .entry-right {
-  padding: 1.25rem 1.75rem;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 0.25rem;
-  min-width: 140px;
-  border-left: 1px solid var(--bdr-light);
+  padding: 1.1rem 1.5rem;
+  display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
+  gap: 0.25rem; min-width: 130px;
+  border-left: 1px solid var(--border-soft);
 }
-
-.cd-num {
-  font-family: var(--fd);
-  font-size: 2.4rem;
-  font-weight: 600;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.cd-lbl {
-  font-family: var(--fm);
-  font-size: 0.65rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  text-align: right;
-}
-
-.cd-date {
-  font-family: var(--fm);
-  font-size: 0.72rem;
-  color: var(--dim);
-  text-align: right;
-}
-
-.cd-num.s-red { color: var(--red); animation: sn-glow-red  3s ease-in-out infinite; }
-.cd-num.s-yel { color: var(--yel); animation: sn-glow-yel  3s ease-in-out infinite 0.3s; }
-.cd-num.s-grn { color: var(--grn); animation: sn-glow-grn  3s ease-in-out infinite 0.6s; }
-.cd-num.s-exp { color: var(--muted); font-size: 0.85rem; letter-spacing: 0.05em; }
+.cd-num { font-family: var(--fd); font-size: 2.2rem; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; text-align: right; }
+.cd-lbl { font-family: var(--fm); font-size: 0.63rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; text-align: right; }
+.cd-date { font-family: var(--fm); font-size: 0.7rem; color: var(--text-dim); text-align: right; }
+.cd-num.s-red { color: var(--red); }
+.cd-num.s-yel { color: var(--yel); }
+.cd-num.s-grn { color: var(--grn); }
+.cd-num.s-exp { color: var(--text-muted); font-size: 0.82rem; letter-spacing: 0.05em; }
 .cd-num.cd-exp-recent { color: var(--red); }
+.cd-hedge { font-family: var(--fm); font-size: 0.72rem; color: var(--text-muted); text-align: right; line-height: 1.4; max-width: 8rem; }
+.cd-hedge .cd-hedge-date { color: var(--text); font-weight: 500; }
+.cd-announced { font-family: var(--fm); font-size: 0.8rem; color: var(--text-muted); text-align: right; line-height: 1.5; }
+.cd-announced::before { content: 'ANNOUNCED'; display: block; font-size: 0.6rem; color: var(--text-dim); letter-spacing: 0.07em; margin-bottom: 0.2rem; }
 
 /* States */
-.state-msg {
-  text-align: center;
-  padding: 5rem 1rem;
-  color: var(--muted);
-  font-family: var(--fm);
-  font-size: 0.9rem;
-}
-
+.state-msg { text-align: center; padding: 5rem 1rem; color: var(--text-muted); font-family: var(--fm); font-size: 0.9rem; }
 .spinner {
-  display: inline-block;
-  width: 28px; height: 28px;
-  border: 2px solid var(--bdr);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-  margin-bottom: 1rem;
+  display: inline-block; width: 28px; height: 28px;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.7s linear infinite; margin-bottom: 1rem;
 }
-
-@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Footer */
-.footer {
-  margin-top: 3rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--bdr);
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.footer-text {
-  font-family: var(--fm);
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
+.footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; }
+.footer-text { font-family: var(--fm); font-size: 0.75rem; color: var(--text-muted); }
 .footer-text a { color: var(--accent); text-decoration: none; }
 .footer-text a:hover { text-decoration: underline; }
 .source-health-item.degraded { color: var(--yel); }
 
-/* Degraded-mode banner -- plain and non-alarming (admin tool, not a red alert):
-   "source X hasn't updated since T", not a siren. */
 .degraded-banner {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  background: var(--yel-bg);
-  border: 1px solid var(--yel-bdr);
-  color: var(--yel);
-  border-radius: var(--r);
-  padding: 0.7rem 1rem;
-  margin-bottom: 1rem;
-  font-family: var(--fm);
-  font-size: 0.82rem;
-  line-height: 1.5;
+  display: flex; align-items: center; gap: 0.6rem;
+  background: var(--yel-bg); border: 1px solid var(--yel-bdr); color: var(--yel);
+  border-radius: var(--r); padding: 0.7rem 1rem; margin-bottom: 1rem;
+  font-family: var(--fm); font-size: 0.82rem; line-height: 1.5;
 }
 .degraded-banner-icon { flex-shrink: 0; }
 
 /* ── Responsive ── */
-@media (max-width: 1200px) {
-  .page { padding: 2rem 2rem 4rem; }
-}
+@media (max-width: 1200px) { .page { padding: 2rem 2rem 4rem; } }
 
 @media (max-width: 900px) {
   .stats { grid-template-columns: repeat(2, 1fr); }
   .hero-title { font-size: 2.4rem; }
   .ctx-urgency-row { gap: 1rem; }
+  .filter-bar-tools { margin-left: 0; width: 100%; }
+  .search-wrap { flex: 1; }
+  .search-input { width: 100%; }
+  .search-input:focus { width: 100%; }
 }
 
 @media (max-width: 640px) {
@@ -857,251 +852,22 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
   .hero-right { align-items: flex-start; }
   .hero-title { font-size: 1.9rem; }
 
-  .stats { grid-template-columns: repeat(2, 1fr); gap: 0.65rem; }
-  .stat-num { font-size: 2.2rem; }
+  .stats { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
+  .stat-num { font-size: 2rem; }
 
-  .entry { grid-template-columns: 4px 1fr; }
+  .entry-summary { grid-template-columns: 4px 1fr; }
   .entry-right {
-    grid-column: 2;
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 1rem;
-    border-left: none;
-    border-top: 1px solid var(--bdr-light);
-    padding: 0.75rem 1.25rem;
-    min-width: 0;
+    grid-column: 2; flex-direction: row; align-items: center; justify-content: flex-start;
+    gap: 1rem; border-left: none; border-top: 1px solid var(--border-soft);
+    padding: 0.75rem 1.25rem; min-width: 0;
   }
-
-  .cd-num { font-size: 1.6rem; text-align: left; }
+  .entry-caret { grid-column: 1 / -1; justify-self: flex-end; padding: 0.25rem 1.25rem; }
+  .cd-num { font-size: 1.5rem; text-align: left; }
   .cd-lbl, .cd-date { text-align: left; }
 
-  .search-wrap { margin-left: 0; width: 100%; }
-  .search-input { width: 100%; }
-  .search-input:focus { width: 100%; }
-
-  .controls { gap: 0.4rem; }
-  .fbtn { font-size: 0.78rem; padding: 0.4rem 0.9rem; }
+  .filter-row { gap: 0.4rem; }
+  .chip { font-size: 0.75rem; padding: 0.36rem 0.75rem; }
 }
-
-/* ── TENANT PROFILE ────────────────────────────────────────────────────────── */
-.profile-panel {
-  background: var(--surf);
-  border: 1px solid rgba(88,166,255,.25);
-  border-radius: var(--r);
-  margin-bottom: 1.5rem;
-  overflow: hidden;
-}
-
-.profile-toggle {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.75rem 1.25rem; cursor: pointer; user-select: none;
-  font-family: var(--fm); font-size: 0.8rem; color: var(--accent);
-  background: none; border: none; width: 100%; text-align: left;
-  transition: opacity 0.15s;
-}
-.profile-toggle:hover { opacity: 0.8; }
-
-.profile-toggle-right { display: flex; align-items: center; gap: 0.75rem; }
-
-.profile-badge {
-  font-family: var(--fm); font-size: 0.7rem;
-  color: var(--grn); background: var(--grn-bg);
-  border: 1px solid var(--grn-bdr);
-  padding: 0.15rem 0.6rem; border-radius: 4px;
-  display: none;
-}
-.profile-badge.on { display: inline; }
-
-.profile-toggle-icon { font-size: 0.7rem; transition: transform 0.2s; }
-.profile-panel.open .profile-toggle-icon { transform: rotate(180deg); }
-
-.profile-body {
-  padding: 1rem 1.25rem 1.25rem;
-  border-top: 1px solid rgba(88,166,255,.12);
-  display: none;
-}
-.profile-panel.open .profile-body { display: block; }
-
-.profile-intro {
-  font-size: 0.82rem; color: var(--muted);
-  margin-bottom: 1rem; line-height: 1.55;
-}
-
-.profile-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.55rem 1.5rem;
-  margin-bottom: 1rem;
-}
-
-.profile-item { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
-.profile-item input[type="checkbox"] {
-  width: 14px; height: 14px; cursor: pointer;
-  accent-color: var(--accent); flex-shrink: 0;
-}
-.profile-item label {
-  font-family: var(--fm); font-size: 0.77rem;
-  color: var(--text); cursor: pointer; line-height: 1.3;
-}
-
-.profile-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }
-
-.profile-save {
-  font-family: var(--fm); font-size: 0.78rem;
-  padding: 0.4rem 1rem; border-radius: 6px;
-  border: 1px solid var(--accent);
-  background: rgba(88,166,255,.1); color: var(--accent);
-  cursor: pointer; transition: all 0.15s;
-}
-.profile-save:hover { background: rgba(88,166,255,.2); }
-
-.profile-reset {
-  font-family: var(--fm); font-size: 0.72rem; color: var(--muted);
-  background: none; border: none; cursor: pointer;
-  text-decoration: underline; transition: color 0.15s;
-}
-.profile-reset:hover { color: var(--text); }
-
-.profile-note {
-  font-family: var(--fm); font-size: 0.7rem;
-  color: var(--dim); margin-top: 0.75rem; line-height: 1.5;
-}
-
-/* Tenant impact badge on cards */
-.badge.i-tenant {
-  color: var(--accent);
-  background: rgba(88,166,255,.1);
-  border-color: rgba(88,166,255,.3);
-}
-
-/* New-this-week badge on cards */
-.badge.i-new-recent {
-  color: var(--grn);
-  background: var(--grn-bg);
-  border-color: var(--grn-bdr);
-}
-
-/* External ID badge on cards */
-.badge.i-external-id {
-  color: #c084fc;
-  background: rgba(192,132,252,.1);
-  border-color: rgba(192,132,252,.3);
-}
-
-/* dateConflict badge (Phase 5): neutral, not alarming -- two official
-   Microsoft channels genuinely disagreeing is useful information, not an
-   error to apologise for. Amber-ish but deliberately duller than the i-medium
-   impact badge so it doesn't read as a severity signal. */
-.badge.i-dateconflict {
-  color: var(--yel);
-  background: var(--grey-bg);
-  border-color: var(--bdr);
-}
-
-/* Roadmap announcements (Phase 5) -- attached Microsoft 365 Roadmap entries
-   for an item. Visually a step down from the main entry body: smaller,
-   dimmer, clearly "supplementary official info" rather than a second
-   headline. */
-.entry-announcements {
-  margin: 0.5rem 0 0.65rem;
-  padding-top: 0.5rem;
-  border-top: 1px dashed var(--bdr);
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-.announcement-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  font-family: var(--fm);
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-.announcement-basis {
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 0.68rem;
-}
-.announcement-basis.exact { color: var(--accent); }
-/* "Likely related" is a hedge, not a fact -- never styled to look as
-   confident as an exact-id match. Deliberately muted, not accent-colored. */
-.announcement-basis.likely { color: var(--dim); font-style: italic; }
-.announcement-row a.lnk { font-size: 0.72rem; }
-
-/* External ID filter button active state */
-.fbtn.ext-id-btn { color: #c084fc; border-color: rgba(192,132,252,.4); }
-.fbtn.ext-id-btn.active { background: rgba(192,132,252,.15); border-color: #c084fc; }
-
-/* External ID stat card */
-.stat-card.s-purple .stat-num { color: #c084fc; animation: sn-glow-purp 3s ease-in-out infinite; }
-
-/* Affected stat card */
-.stat-card.s-blue .stat-num { color: var(--accent); animation: sn-glow-blue 3s ease-in-out infinite; }
-
-@media (max-width: 640px) {
-  .profile-grid { grid-template-columns: repeat(2, 1fr); }
-}
-
-/* Announced date (shown on cards without a deadline) */
-.cd-announced {
-  font-family: var(--fm);
-  font-size: 0.8rem;
-  color: var(--muted);
-  text-align: right;
-  line-height: 1.5;
-}
-.cd-announced::before {
-  content: 'ANNOUNCED';
-  display: block;
-  font-size: 0.6rem;
-  color: var(--dim);
-  letter-spacing: 0.07em;
-  margin-bottom: 0.2rem;
-}
-
-/* On radar star button */
-.radar-btn {
-  background: none;
-  border: 1px solid var(--bdr-light);
-  color: var(--muted);
-  width: 26px; height: 26px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.88rem;
-  transition: all 0.15s;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  padding: 0;
-}
-.radar-btn:hover { border-color: #e3b341; color: #e3b341; }
-.radar-btn.on    { border-color: #e3b341; color: #e3b341; background: rgba(227,179,65,.1); }
-
-/* On radar filter button */
-.fbtn.radar-filter-btn { color: #e3b341; border-color: rgba(227,179,65,.4); }
-.fbtn.radar-filter-btn.active { background: rgba(227,179,65,.15); border-color: #e3b341; color: #e3b341; font-weight: 700; }
-
-/* Sort select */
-.sort-sel {
-  font-family: var(--fm);
-  font-size: 0.85rem;
-  padding: 0.5rem 0.9rem;
-  border-radius: 24px;
-  border: 1px solid var(--bdr);
-  background: var(--surf);
-  color: var(--muted);
-  cursor: pointer;
-  outline: none;
-  transition: border-color 0.15s, color 0.15s;
-  white-space: nowrap;
-}
-.sort-sel:hover, .sort-sel:focus { border-color: var(--accent); color: var(--text); }
 </style>
     <script defer src="https://analytics.aboutcloud.io/script.js" data-website-id="a58f5b6a-e25d-4dd8-a008-5e5001b3c97c"></script>
 </head>
@@ -1173,6 +939,16 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
               <a class="sub-open" href="https://api.aboutcloud.io/entra-tracker?format=rss&amp;namespace=external-id" target="_blank" rel="noopener">Open</a>
             </div>
           </div>
+          <div class="sub-row" data-row="ics">
+            <div class="sub-row-main">
+              <div class="sub-row-label">&#128197; Calendar (.ics)</div>
+              <div class="sub-row-desc">Every deadline as a calendar subscription. Add once in Outlook or Google Calendar and it stays current.</div>
+            </div>
+            <div class="sub-row-actions">
+              <button class="sub-copy" data-url="https://api.aboutcloud.io/entra-tracker?format=ics">Copy</button>
+              <a class="sub-open" href="https://api.aboutcloud.io/entra-tracker?format=ics" target="_blank" rel="noopener">Open</a>
+            </div>
+          </div>
           <div class="sub-row" data-row="csv">
             <div class="sub-row-main">
               <div class="sub-row-label">&#128202; CSV export</div>
@@ -1204,33 +980,33 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
     <span id="degradedBannerText"></span>
   </div>
 
-  <!-- Stats -->
+  <!-- Stats (informational dashboard, not a filter control -- see .stats CSS comment) -->
   <div class="stats" id="stats" style="display:none">
-    <div class="stat-card s-red"  data-sf="red">
+    <div class="stat-card s-red" data-urgency="red">
       <div class="stat-num" id="sn-red">0</div>
       <div class="stat-lbl">🔴 Urgent · &lt;90 days</div>
     </div>
-    <div class="stat-card s-yel" data-sf="yellow">
+    <div class="stat-card s-yel" data-urgency="yellow">
       <div class="stat-num" id="sn-yel">0</div>
       <div class="stat-lbl">🟡 Plan now · 90–180d</div>
     </div>
-    <div class="stat-card s-grn" data-sf="green">
+    <div class="stat-card s-grn" data-urgency="green">
       <div class="stat-num" id="sn-grn">0</div>
       <div class="stat-lbl">🟢 On radar · &gt;180d</div>
     </div>
-    <div class="stat-card s-grey" data-sf="expired">
+    <div class="stat-card s-grey" data-urgency="expired">
       <div class="stat-num" id="sn-exp">0</div>
       <div class="stat-lbl">⚫ Expired</div>
     </div>
-    <div class="stat-card s-blue" data-sf="tenant" id="stat-tenant" style="display:none">
+    <div class="stat-card s-blue" id="stat-tenant" style="display:none">
       <div class="stat-num" id="sn-tenant">0</div>
-      <div class="stat-lbl">🎯 Affects your tenant</div>
+      <div class="stat-lbl">🎯 Matches my environment</div>
     </div>
   </div>
 
-  <!-- External ID namespace card — always visible once data loads -->
+  <!-- External ID namespace summary — informational, always visible once data loads -->
   <div class="stat-extid-row" id="extid-row" style="display:none">
-    <div class="stat-card-extid" id="stat-extid" data-sf="external-id">
+    <div class="stat-card-extid" id="stat-extid">
       <div class="extid-count" id="sn-extid">0</div>
       <div class="extid-meta">
         <div class="extid-label">🟣 External ID</div>
@@ -1280,63 +1056,63 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
     </div>
   </div>
 
-  <!-- Tenant Profile Panel -->
-  <div class="profile-panel" id="profilePanel">
-    <button class="profile-toggle" onclick="toggleProfile()">
-      <span>🎯 &nbsp;My Tenant Profile — personalise this feed</span>
-      <span class="profile-toggle-right">
-        <span class="profile-badge" id="profileBadge">Profile active</span>
-        <span class="profile-toggle-icon" id="profileIcon">▼</span>
+  <!-- My Environment panel (reframed Tenant Profile) -->
+  <div class="env-panel" id="envPanel">
+    <button class="env-toggle" onclick="toggleEnvPanel()">
+      <span>🎯 &nbsp;My environment — a rough, self-declared "does this affect me"</span>
+      <span class="env-toggle-right">
+        <span class="env-badge" id="envBadge">Active</span>
+        <span class="env-toggle-icon" id="envIcon">▼</span>
       </span>
     </button>
-    <div class="profile-body" id="profileBody">
-      <p class="profile-intro">
-        <strong style="color:var(--text)">How it works:</strong> tick the features that apply to your tenant, then click <em>Save profile &amp; filter</em>. The tracker will instantly highlight every change relevant to your setup with a <strong style="color:var(--accent)">🎯 Affects your tenant</strong> badge, and a new filter button lets you view only those changes.<br><br>
+    <div class="env-body" id="envBody">
+      <p class="env-intro">
+        <strong style="color:var(--text)">How it works:</strong> tick the features that apply to your tenant, then click <em>Save &amp; filter</em>. Matching changes get a <strong style="color:var(--accent)">🎯 Affects your tenant</strong> badge and a "Matches my environment" chip appears in the filter bar. This is a manual, keyword-based approximation — not a real inspection of your tenant. It's a deliberate placeholder for a future feature that would connect to your tenant directly (via delegated Microsoft Graph access) and tell you precisely, not approximately, what applies; this panel is staged to become that feature's entry point.<br><br>
         <strong style="color:var(--grn)">🔒 Privacy:</strong> your selections are saved exclusively in your browser's localStorage — the same mechanism websites use to remember your preferences. <strong>No data is transmitted to any server, collected, stored, or shared.</strong> There is no account, no tracking, and no analytics tied to your choices. You can verify this yourself: open browser DevTools → Application → Local Storage → <code style="color:var(--accent);font-size:0.72rem">entratracker.aboutcloud.io</code> and you will see your profile stored only there.
       </p>
-      <div class="profile-grid">
-        <label class="profile-item">
+      <div class="env-grid">
+        <label class="env-item">
           <input type="checkbox" id="p-hybrid"> <label for="p-hybrid">Hybrid Identity (Entra Connect)</label>
         </label>
-        <label class="profile-item">
+        <label class="env-item">
           <input type="checkbox" id="p-adfs"> <label for="p-adfs">ADFS / Federation</label>
         </label>
-        <label class="profile-item">
+        <label class="env-item">
           <input type="checkbox" id="p-legacy"> <label for="p-legacy">Legacy Authentication in use</label>
         </label>
-        <label class="profile-item">
+        <label class="env-item">
           <input type="checkbox" id="p-b2b"> <label for="p-b2b">Guest / B2B Users</label>
         </label>
-        <label class="profile-item">
+        <label class="env-item">
           <input type="checkbox" id="p-ca"> <label for="p-ca">Conditional Access policies</label>
         </label>
-        <label class="profile-item">
+        <label class="env-item">
           <input type="checkbox" id="p-intune"> <label for="p-intune">Intune / MDM enrolled</label>
         </label>
-        <label class="profile-item">
+        <label class="env-item">
           <input type="checkbox" id="p-pim"> <label for="p-pim">PIM (Privileged Identity Mgmt)</label>
         </label>
-        <label class="profile-item">
+        <label class="env-item">
           <input type="checkbox" id="p-passkey"> <label for="p-passkey">Passkeys / FIDO2 enabled</label>
         </label>
-        <label class="profile-item">
+        <label class="env-item">
           <input type="checkbox" id="p-gsa"> <label for="p-gsa">Global Secure Access</label>
         </label>
-        <label class="profile-item">
+        <label class="env-item">
           <input type="checkbox" id="p-sspr"> <label for="p-sspr">Self-Service Password Reset</label>
         </label>
-        <label class="profile-item">
+        <label class="env-item">
           <input type="checkbox" id="p-mfa"> <label for="p-mfa">Per-user MFA enforcement</label>
         </label>
-        <label class="profile-item">
+        <label class="env-item">
           <input type="checkbox" id="p-externalid"> <label for="p-externalid"><span style="color:#c084fc;margin-right:0.3rem">🟣</span>External ID / B2B / B2C</label>
         </label>
       </div>
-      <div class="profile-actions">
-        <button class="profile-save" onclick="saveProfile()">Save profile &amp; filter</button>
-        <button class="profile-reset" onclick="resetProfile()">Reset</button>
+      <div class="env-actions">
+        <button class="env-save" onclick="saveEnvProfile()">Save &amp; filter</button>
+        <button class="env-reset" onclick="resetEnvProfile()">Reset</button>
       </div>
-      <p class="profile-note">⚡ Stored in your browser only · No account needed · Reset anytime · Anonymous feature counts (e.g. "hybrid: yes") sent to our self-hosted Umami analytics — no personal data, no tenant names</p>
+      <p class="env-note">⚡ Stored in your browser only · No account needed · Reset anytime · Anonymous feature counts (e.g. "hybrid: yes") sent to our self-hosted Umami analytics — no personal data, no tenant names</p>
     </div>
   </div>
 
@@ -1375,7 +1151,7 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
 
         <div class="legend-item">
           <div class="legend-item-header">
-            <span class="legend-badge-name" style="color:var(--muted)">⚫ Expired</span>
+            <span class="legend-badge-name" style="color:var(--text-muted)">⚫ Expired</span>
           </div>
           <div class="legend-desc">Deadline has passed. Shown for reference — hidden by default, use the toggle to display.</div>
         </div>
@@ -1455,9 +1231,9 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
 
         <div class="legend-item">
           <div class="legend-item-header">
-            <span class="legend-badge-name" style="color:var(--muted)">Unconfirmed dates</span>
+            <span class="legend-badge-name" style="color:var(--text-muted)">Unconfirmed dates</span>
           </div>
-          <div class="legend-desc">Sometimes the only date in an entry doesn't have clear cutoff language near it — it might be a rollout date, a publish date, or a genuine deadline Microsoft just didn't phrase clearly. Rather than guess with a countdown, the tracker shows the date plainly, labelled "possible date… unconfirmed." Treat it as a lead to verify against the linked Microsoft article, not a date to plan around.</div>
+          <div class="legend-desc">Sometimes the only date in an entry doesn't have clear cutoff language near it — it might be a rollout date, a publish date, or a genuine deadline Microsoft just didn't phrase clearly. Rather than guess with a countdown, the tracker shows the date plainly, labelled "possible date… unconfirmed." Treat it as a lead to verify against the linked Microsoft article, not a date to plan around. The same items are marked with a leading "~" in the .ics calendar feed.</div>
         </div>
 
         <hr class="legend-divider">
@@ -1473,7 +1249,7 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
           <div class="legend-item-header">
             <span class="legend-badge-name" style="color:var(--text)">What this tracker covers</span>
           </div>
-          <div class="legend-desc">Every item is matched against a single, fixed list of Entra and associated identity services — an item that doesn't match anything on this list isn't shown, on purpose, rather than left in as noise. Filter the feed by service area using the dropdown above the cards. Currently covered:</div>
+          <div class="legend-desc">Every item is matched against a single, fixed list of Entra and associated identity services — an item that doesn't match anything on this list isn't shown, on purpose, rather than left in as noise. Filter the feed by service area using the chips in the filter bar. Currently covered:</div>
           <div class="legend-desc" id="methodology-coverage">Loading…</div>
         </div>
 
@@ -1481,32 +1257,50 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
     </div>
   </details>
 
-  <!-- Controls -->
-  <div class="controls">
-    <button class="fbtn active" data-f="all">All</button>
-    <button class="fbtn" data-f="retirement">Retiring</button>
-    <button class="fbtn" data-f="breaking">Breaking</button>
-    <button class="fbtn" data-f="preview">Preview</button>
-    <button class="fbtn" data-f="new_feature">New</button>
-    <button class="fbtn ext-id-btn" data-f="external-id" id="btn-extid">🟣 External ID</button>
-    <button class="fbtn" data-f="expired">Expired</button>
-    <button class="fbtn" data-f="tenant" id="btn-tenant" style="display:none;color:var(--accent);border-color:rgba(88,166,255,.4)">🎯 My Tenant</button>
-    <button class="fbtn radar-filter-btn" data-f="radar" id="btn-radar">&#9733; On Radar</button>
-    <label class="toggle-wrap">
-      <input type="checkbox" id="hide-expired" checked>
-      Hide expired
-    </label>
-    <select id="sort-select" class="sort-sel" title="Sort order">
-      <option value="default">Sort: Default (urgency)</option>
-      <option value="announced">Sort: Newest announced</option>
-    </select>
-    <select id="svc-category-select" class="sort-sel" title="Filter by Entra service area">
-      <option value="all">All service areas</option>
-    </select>
-    <div class="search-wrap">
-      <input type="text" id="search" class="search-input" placeholder="Search changes..." autocomplete="off">
+  <!-- Unified filter bar -->
+  <div class="filter-bar">
+    <div class="filter-row">
+      <div class="filter-group" id="urgency-chips" role="group" aria-label="Filter by urgency">
+        <span class="filter-group-label">Urgency</span>
+        <!-- chips injected by JS from a fixed list -->
+      </div>
+      <div class="filter-group" id="special-chips" role="group" aria-label="Other filters">
+        <!-- External ID / On Radar / My environment toggle chips, injected by JS -->
+      </div>
+      <div class="filter-bar-tools">
+        <label class="toggle-wrap">
+          <input type="checkbox" id="hide-expired" checked>
+          Hide expired by default
+        </label>
+        <select id="sort-select" class="sort-sel" title="Sort order">
+          <option value="default">Sort: Default (urgency)</option>
+          <option value="announced">Sort: Newest announced</option>
+        </select>
+        <div class="search-wrap">
+          <input type="text" id="search" class="search-input" placeholder="Search changes..." autocomplete="off">
+        </div>
+        <button class="copy-link-btn" id="copyLinkBtn" type="button" title="Copy a link to this exact filtered view">&#128279; Copy link</button>
+      </div>
     </div>
-    <button class="fbtn copy-link-btn" id="copyLinkBtn" type="button" title="Copy a link to this exact filtered view">&#128279; Copy link</button>
+    <div class="filter-row">
+      <div class="filter-group" id="type-chips" role="group" aria-label="Filter by change type">
+        <span class="filter-group-label">Type</span>
+        <!-- chips injected by JS -->
+      </div>
+    </div>
+    <div class="filter-row">
+      <div class="filter-group" id="service-chips" role="group" aria-label="Filter by service area">
+        <span class="filter-group-label">Service area</span>
+        <!-- chips injected by JS, sourced live from GET /taxonomy -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Active filters pill strip -->
+  <div class="active-filters" id="activeFilters">
+    <span class="active-filters-label">Active:</span>
+    <div id="activeFiltersPills" style="display:contents"></div>
+    <button class="clear-all-btn" id="clearAllBtn" type="button">Clear all</button>
   </div>
 
   <!-- Count -->
@@ -1541,6 +1335,8 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
       Built by <a href="https://blog.aboutcloud.io" target="_blank">AboutCloud.io</a>
       ·
       <a href="https://api.aboutcloud.io/entra-tracker?format=rss" target="_blank">RSS Feed</a>
+      ·
+      <a href="https://api.aboutcloud.io/entra-tracker?format=ics" target="_blank">Calendar (.ics)</a>
     </div>
     <div class="footer-text" id="sourceHealthFooter"></div>
   </div>
@@ -1564,7 +1360,7 @@ const ARTICLES = {
   'risk polic retir':'https://aboutcloud.io/entra-id-protection-unified-risk-signals',
 };
 
-// Profile keyword matching — maps each profile flag to keywords in change titles/descriptions
+// Profile keyword matching — maps each "my environment" flag to keywords in change titles/descriptions
 const PROFILE_KEYWORDS = {
   'p-hybrid':    ['hybrid','entra connect','ad connect','azure ad connect','on-premises','on-prem','seamless sso','password hash','pass-through','writeback'],
   'p-adfs':      ['adfs','ad fs','federation','federated','ws-fed','saml','claim','relying party'],
@@ -1582,8 +1378,32 @@ const PROFILE_KEYWORDS = {
 
 const PROFILE_KEY = 'entra_tracker_profile_v1';
 
-let all=[], af='all', as_=null, sq='', hideExpired=true, sortMode='default', coldStart=false, svcFilter='all';
+// ── Unified filter state (frontend redesign) ────────────────────────────
+// Replaces the old three-way split (12 checkboxes / status-button-row +
+// two selects / free-text search) with one model: multi-select Sets per
+// axis, plus a few standalone toggle flags, all rendered through the same
+// .chip component and all visible in the active-filters pill strip.
+const URGENCY_OPTIONS = [
+  { val: 'red',     label: '🔴 Urgent',    cls: 'c-red'  },
+  { val: 'yellow',  label: '🟡 Plan now',  cls: 'c-yel'  },
+  { val: 'green',   label: '🟢 On radar',  cls: 'c-grn'  },
+  { val: 'expired', label: '⚫ Expired',   cls: 'c-grey' },
+];
+const TYPE_OPTIONS = [
+  { val: 'retirement',  label: 'Retiring', cls: 'c-red' },
+  { val: 'breaking',    label: 'Breaking', cls: 'c-yel' },
+  { val: 'preview',     label: 'Preview',  cls: 'c-grey' },
+  { val: 'new_feature', label: 'New',      cls: 'c-grn' },
+];
+
+let all = [], coldStart = false;
+const filters = { urgency: new Set(), type: new Set(), service: new Set() };
+let namespaceOn = false; // External ID
+let radarOn     = false; // On Radar
+let tenantOn    = false; // My environment match
+let sq = '', hideExpired = true, sortMode = 'default';
 let profile = {};
+let serviceAreaNames = []; // populated live from GET /taxonomy
 
 // ── ON RADAR (client-side localStorage watchlist) ─────────────────────────
 const RADAR_KEY = 'entratracker_radar';
@@ -1591,8 +1411,6 @@ const RADAR_MIGRATION_KEY = 'entratracker_radar_idv2';
 let radarIds = new Set();
 
 function loadRadar() {
-  // ids changed in idv2 (FNV hash); clear stale radar once so old colliding
-  // ids don't resurface as phantom/empty state.
   try {
     if (localStorage.getItem(RADAR_MIGRATION_KEY) !== '1') {
       localStorage.removeItem(RADAR_KEY);
@@ -1604,54 +1422,46 @@ function loadRadar() {
     radarIds = new Set(saved ? JSON.parse(saved) : []);
   } catch(e) { radarIds = new Set(); }
 }
-
 function saveRadar() {
   try { localStorage.setItem(RADAR_KEY, JSON.stringify([...radarIds])); } catch(e){}
 }
-
 function toggleRadar(id) {
   if(radarIds.has(id)) radarIds.delete(id);
   else radarIds.add(id);
   saveRadar();
-  render(); // re-render to update star states and radar-only filter
+  render();
 }
-
 window.toggleRadar = toggleRadar;
 
-// ── PROFILE FUNCTIONS ─────────────────────────────────────────────────────────
-
-function loadProfile() {
+// ── MY ENVIRONMENT (reframed Tenant Profile) ────────────────────────────
+function loadEnvProfile() {
   try {
     const saved = localStorage.getItem(PROFILE_KEY);
     profile = saved ? JSON.parse(saved) : {};
   } catch(e) { profile = {}; }
-  applyProfileToUI();
+  applyEnvProfileToUI();
 }
-
-function applyProfileToUI() {
+function applyEnvProfileToUI() {
   Object.keys(PROFILE_KEYWORDS).forEach(id => {
     const el = document.getElementById(id);
     if(el) el.checked = !!profile[id];
   });
   const hasProfile = Object.values(profile).some(v => v);
-  document.getElementById('profileBadge').classList.toggle('on', hasProfile);
-  const btnTenant = document.getElementById('btn-tenant');
+  document.getElementById('envBadge').classList.toggle('on', hasProfile);
   const statTenant = document.getElementById('stat-tenant');
-  if(btnTenant) btnTenant.style.display = hasProfile ? '' : 'none';
   if(statTenant) statTenant.style.display = hasProfile ? '' : 'none';
+  renderSpecialChips();
 }
-
-function saveProfile() {
+function saveEnvProfile() {
   Object.keys(PROFILE_KEYWORDS).forEach(id => {
     const el = document.getElementById(id);
     if(el) profile[id] = el.checked;
   });
   try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch(e){}
-  applyProfileToUI();
+  applyEnvProfileToUI();
   updateStats(all);
   render();
 
-  // Fire anonymous Umami event — feature flags only, no personal data
   if(typeof umami !== 'undefined') {
     umami.track('tenant-profile-saved', {
       hybrid:     !!profile['p-hybrid'],
@@ -1669,32 +1479,23 @@ function saveProfile() {
       features_enabled: Object.values(profile).filter(v=>v).length
     });
   }
-
-  // Close panel
-  document.getElementById('profilePanel').classList.remove('open');
+  document.getElementById('envPanel').classList.remove('open');
 }
-
-function resetProfile() {
+function resetEnvProfile() {
   profile = {};
   try { localStorage.removeItem(PROFILE_KEY); } catch(e){}
-  applyProfileToUI();
-  if(af === 'tenant') {
-    af = 'all';
-    document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
-  }
+  applyEnvProfileToUI();
+  tenantOn = false;
   updateStats(all);
   render();
   if(typeof umami !== 'undefined') umami.track('tenant-profile-reset');
 }
-
-function toggleProfile() {
-  document.getElementById('profilePanel').classList.toggle('open');
+function toggleEnvPanel() {
+  document.getElementById('envPanel').classList.toggle('open');
 }
-
-// Expose to global for onclick
-window.toggleProfile = toggleProfile;
-window.saveProfile   = saveProfile;
-window.resetProfile  = resetProfile;
+window.toggleEnvPanel  = toggleEnvPanel;
+window.saveEnvProfile  = saveEnvProfile;
+window.resetEnvProfile = resetEnvProfile;
 
 function itemMatchesProfile(item) {
   const hasProfile = Object.values(profile).some(v => v);
@@ -1706,35 +1507,27 @@ function itemMatchesProfile(item) {
   return false;
 }
 
-// ── EXISTING FUNCTIONS ────────────────────────────────────────────────────────
+// ── Rendering helpers (mostly unchanged from before the redesign) ───────
 
 function findArt(t){
   const l=t.toLowerCase();
   for(const[k,u] of Object.entries(ARTICLES)) if(l.includes(k)) return u;
   return null;
 }
-
 function esc(s){
   return String(s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-
 function catLabel(c){
   return {retirement:'Retiring',breaking:'Breaking',preview:'Preview',new_feature:'New'}[c]||c;
 }
-
 function impLabel(i){ if(!i) return 'Unknown impact'; return i[0].toUpperCase()+i.slice(1)+' impact'; }
 
 function isRecentlyNew(item, cs) {
   if (cs || !item.firstSeen) return false;
-  // Primary signal: the tracker first saw this item within the last 7 days.
   const seen = new Date(item.firstSeen + 'T00:00:00Z').getTime();
   if (seen < Date.now() - 7 * 86400000) return false;
-  // Sanity guard: if Microsoft announced it long ago (>60 days), it was newly
-  // INGESTED (e.g. a repaired scraper or a freshly-wired source), not actually
-  // fresh -- so don't badge it "Just added". announcedDate is the 1st-of-month
-  // stamp, so 60 days covers "this month or last month". Unknown date -> trust firstSeen.
   if (item.announcedDate) {
     const ann = new Date(item.announcedDate + 'T00:00:00Z').getTime();
     if (ann < Date.now() - 60 * 86400000) return false;
@@ -1748,10 +1541,6 @@ function fmtAnnounced(iso) {
     return d.toLocaleDateString('en-GB', { month:'short', year:'numeric', timeZone:'UTC' });
   } catch(e) { return iso; }
 }
-
-// Day+time precision, unlike fmtAnnounced's month-only -- for "last success"
-// timestamps (Phase 4 health footer) an admin needs to tell "today" from
-// "3 days ago" at a glance, not just "this month".
 function fmtHealthTimestamp(isoDateTime) {
   try {
     const d = new Date(isoDateTime);
@@ -1763,9 +1552,6 @@ function fmtHealthTimestamp(isoDateTime) {
 
 function cdHTML(item){
   if(item.deadline) {
-    // A weakly-supported date (the scorer's best guess, not a clearly-stated
-    // cutoff) never gets a countdown -- a countdown implies certainty this
-    // date doesn't have. Show the date itself with an explicit hedge instead.
     if (item.deadlineConfidence === 'inferred') {
       return `<div class="cd-hedge">possible date<br><span class="cd-hedge-date">${item.deadline}</span><br>unconfirmed</div>`;
     }
@@ -1789,12 +1575,6 @@ function cdHTML(item){
   return '';
 }
 
-// Roadmap announcements (Phase 5): render each attached entry as its own
-// row. exact-id is shown as a definite fact ("Roadmap"); strong-title-date
-// is explicitly hedged ("likely related") -- it's a similarity match, never
-// presented with the same certainty as an id reference. statedDate is
-// month-precision, exactly as the roadmap gives it -- never padded into a
-// fake day-of-month.
 function announcementsHTML(item){
   if(!item.announcements || !item.announcements.length) return '';
   const rows = item.announcements.map(a => {
@@ -1810,6 +1590,19 @@ function announcementsHTML(item){
   return `<div class="entry-announcements">${rows}</div>`;
 }
 
+function openMethodology(){
+  const m = document.getElementById('methodology');
+  if(m){ m.open = true; m.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+}
+window.openMethodology = openMethodology;
+
+// Card redesign (A3): a native <details> per card. The summary row stays
+// compact/scannable (title, key badges, countdown, announcements -- the
+// latter always visible since a roadmap link or dateConflict is a trust
+// signal, not a "read more" detail); the expandable body holds the full
+// description, the evidence quote + source, service-area/source metadata,
+// and links out. Radar toggle sits inside the summary but calls
+// preventDefault so starring an item doesn't also toggle the card open.
 function entryHTML(item){
   const art      = (item.title ? findArt(item.title) : null) || item.articleUrl;
   const ms       = item.link ? `<a class="lnk" href="${esc(item.link)}" target="_blank" rel="noopener">MS Docs &#8599;</a>` : '';
@@ -1819,64 +1612,92 @@ function entryHTML(item){
   const tenantBadge = affected ? `<span class="badge i-tenant">&#127919; Affects your tenant</span>` : '';
   const extIdBadge  = item.namespace === 'external-id' ? `<span class="badge i-external-id">&#x1F7E3; External ID</span>` : '';
   const newBadge    = isRecentlyNew(item, coldStart) ? `<span class="badge i-new-recent">&#10024; Just added</span>` : '';
-  // dateConflict (Phase 5): the roadmap and another Microsoft source
-  // genuinely disagree on a date for the same item -- shown plainly, not
-  // smoothed over. Neither date is hidden; both remain visible (the
-  // existing deadline above, the roadmap's own stated date in the
-  // announcements row below).
   const dateConflictBadge = item.dateConflict
     ? `<span class="badge i-dateconflict" title="Microsoft's roadmap states a different date than the source this deadline came from -- see the roadmap entry below">&#9888; Dates disagree</span>`
     : '';
-  // Evidence tier: how strong Microsoft's own signal was. Absent on items
-  // loaded from a pre-Phase-1 cache snapshot -- omit the badge rather than
-  // show a misleading "unknown tier".
+  // "Recently moved" slot (A3): wired to the one real signal already
+  // available (a reworded title, Phase 1's titleHistory[]) -- the read-side
+  // deadline-slip signal from the D1 revision store lands in a later work
+  // order and will extend this same badge rather than requiring a new one.
+  const revisedBadge = (item.titleHistory && item.titleHistory.length)
+    ? `<span class="badge i-revised" title="Microsoft has revised this item's details since it was first tracked (e.g. a reworded title). Deadline-change history will appear here in a future update.">&#8635; Revised</span>`
+    : '';
   const tier = item.evidence && item.evidence.tier;
   const tierBadge = tier
     ? `<span class="badge tier-${tier.toLowerCase()}" title="Evidence tier ${tier} -- see Methodology">Tier ${tier}</span>`
     : '';
   const starred  = radarIds.has(item.id);
-  const radarBtn = `<button class="radar-btn${starred?' on':''}" onclick="toggleRadar('${item.id}')" title="${starred?'Remove from On Radar':'Add to On Radar'}" aria-label="${starred?'Remove from radar':'Add to radar'}">${starred?'&#9733;':'&#9734;'}</button>`;
+  const radarBtn = `<button class="radar-btn${starred?' on':''}" onclick="event.preventDefault(); event.stopPropagation(); toggleRadar('${item.id}')" title="${starred?'Remove from On Radar':'Add to On Radar'}" aria-label="${starred?'Remove from radar':'Add to radar'}">${starred?'&#9733;':'&#9734;'}</button>`;
 
-  return `<div class="entry ${sc}">
-    <div class="entry-strip"></div>
-    <div class="entry-body">
-      <div class="entry-title">${esc(item.title)}</div>
-      <div class="entry-desc">${esc(item.description||'')}</div>
-      ${announcementsHTML(item)}
-      <div class="entry-meta">
-        ${newBadge}
-        <span class="badge c-${item.category}">${catLabel(item.category)}</span>
-        <span class="badge i-${item.impact}">${impLabel(item.impact)}</span>
-        ${tierBadge}
-        ${extIdBadge}
-        ${dateConflictBadge}
-        ${tenantBadge}
+  const evidenceBlock = (item.evidence && (item.evidence.quote || item.evidence.basis))
+    ? `<div class="entry-evidence">
+         <div class="entry-evidence-label">Evidence${tier ? ' &middot; Tier ' + esc(tier) : ''}</div>
+         ${item.evidence.quote ? `&ldquo;${esc(item.evidence.quote)}&rdquo;` : ''}
+       </div>`
+    : '';
+
+  const sourcesLine = (() => {
+    const names = (item.sources && item.sources.length) ? item.sources : (item.source ? [item.source] : []);
+    const parts = [];
+    if (item.serviceCategory) parts.push(`Service area: ${esc(item.serviceCategory)}`);
+    if (names.length) parts.push(`Source${names.length>1?'s':''}: ${esc(names.join(', '))}`);
+    if (item.deadlineConfidence) parts.push(`Deadline confidence: ${esc(item.deadlineConfidence)}`);
+    return parts.length ? `<div class="entry-meta-line">${parts.join(' &middot; ')}</div>` : '';
+  })();
+
+  return `<details class="entry ${sc}">
+    <summary class="entry-summary">
+      <div class="entry-strip"></div>
+      <div class="entry-main">
+        <div class="entry-title-row">
+          ${radarBtn}
+          <div class="entry-title">${esc(item.title)}</div>
+        </div>
+        <div class="entry-desc-preview">${esc(item.description||'')}</div>
+        ${announcementsHTML(item)}
+        <div class="entry-meta">
+          ${newBadge}
+          ${revisedBadge}
+          <span class="badge c-${item.category}">${catLabel(item.category)}</span>
+          <span class="badge i-${item.impact}">${impLabel(item.impact)}</span>
+          ${tierBadge}
+          ${extIdBadge}
+          ${dateConflictBadge}
+          ${tenantBadge}
+        </div>
+      </div>
+      <div class="entry-right">${cdHTML(item)}</div>
+      <span class="entry-caret" aria-hidden="true">&#9662;</span>
+    </summary>
+    <div class="entry-detail">
+      <div class="entry-detail-desc">${esc(item.description||'')}</div>
+      ${evidenceBlock}
+      ${sourcesLine}
+      <div class="entry-detail-links">
         ${ms}${ar}
-        ${radarBtn}
+        <button class="methodology-link" type="button" onclick="openMethodology()">How is this scored? &#8594;</button>
       </div>
     </div>
-    <div class="entry-right">${cdHTML(item)}</div>
-  </div>`;
+  </details>`;
 }
 
+// ── Unified filtering (replaces the old af/as_ single-select model) ─────
 function getFiltered(){
   const items = all.filter(i => {
-    // "Hide expired" suppresses BOTH expired tiers (recent <=90d and old 91-365d)
-    // unless the user is explicitly on the Expired tab/filter.
-    if(hideExpired && (i.status === 'expired' || i.status === 'expired_recent') && af !== 'expired' && as_ !== 'expired') return false;
-    // Expired tab shows BOTH tiers (recent + old).
-    if(af === 'expired' && i.status !== 'expired' && i.status !== 'expired_recent') return false;
-    if(af === 'tenant' && !itemMatchesProfile(i)) return false;
-    if(af === 'external-id' && i.namespace !== 'external-id') return false;
-    if(af === 'radar' && !radarIds.has(i.id)) return false;
-    if(af !== 'all' && af !== 'expired' && af !== 'tenant' && af !== 'external-id' && af !== 'radar' && i.category !== af) return false;
-    if(svcFilter !== 'all' && i.serviceCategory !== svcFilter) return false;
-    // When stat card filter is 'expired', match both expired tiers.
-    const statusMatch = as_ === 'expired'
-      ? (i.status === 'expired' || i.status === 'expired_recent')
-      : i.status === as_;
-    if(as_ && as_ !== 'tenant' && as_ !== 'external-id' && !statusMatch) return false;
-    if(sq && !i.title.toLowerCase().includes(sq) && !(i.description||'').toLowerCase().includes(sq)) return false;
+    const isExpired = i.status === 'expired' || i.status === 'expired_recent';
+    if (filters.urgency.size) {
+      const matchesUrgency = filters.urgency.has(i.status)
+        || (filters.urgency.has('expired') && isExpired);
+      if (!matchesUrgency) return false;
+    } else if (isExpired && hideExpired) {
+      return false;
+    }
+    if (filters.type.size && !filters.type.has(i.category)) return false;
+    if (filters.service.size && !filters.service.has(i.serviceCategory)) return false;
+    if (namespaceOn && i.namespace !== 'external-id') return false;
+    if (radarOn && !radarIds.has(i.id)) return false;
+    if (tenantOn && !itemMatchesProfile(i)) return false;
+    if (sq && !i.title.toLowerCase().includes(sq) && !(i.description||'').toLowerCase().includes(sq)) return false;
     return true;
   });
 
@@ -1889,7 +1710,7 @@ function getFiltered(){
       if(db) return 1;
       return 0;
     });
-  } else if(as_ === 'green'){
+  } else if(filters.urgency.size === 1 && filters.urgency.has('green')){
     const imp = {high:0,medium:1,low:2};
     items.sort((a,b)=>{
       const aD=!!a.deadline, bD=!!b.deadline;
@@ -1912,48 +1733,176 @@ function render(){
   document.getElementById('total').textContent = all.length;
   document.getElementById('count').style.display = 'block';
 
-  // Show/hide External ID context banner
   const ctx = document.getElementById('extid-ctx');
-  if(ctx) ctx.classList.toggle('visible', af === 'external-id');
+  if(ctx) ctx.classList.toggle('visible', namespaceOn);
 
-  // Sync External ID card active state
   const extCard = document.getElementById('stat-extid');
-  if(extCard) extCard.classList.toggle('active', af === 'external-id');
+  if(extCard) extCard.classList.toggle('is-active-filter', namespaceOn);
 
+  document.querySelectorAll('#stats .stat-card[data-urgency]').forEach(c => {
+    c.classList.toggle('is-active-filter', filters.urgency.has(c.dataset.urgency));
+  });
+
+  renderActiveFilters();
   updateUrl();
 }
 
-// ── Shareable filter links — mirror filter/status/search into the URL so
-// the address bar is always a link to the current view (e.g. one team can
-// send another a link straight to the External ID filter). ────────────────
+// ── Chip rendering ────────────────────────────────────────────────────────
+function makeChip(container, { val, label, cls, active, onToggle }) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = `chip ${cls}`;
+  btn.textContent = label;
+  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  btn.addEventListener('click', () => onToggle());
+  container.appendChild(btn);
+}
+
+function renderUrgencyChips() {
+  const el = document.getElementById('urgency-chips');
+  el.querySelectorAll('.chip').forEach(c => c.remove());
+  URGENCY_OPTIONS.forEach(opt => makeChip(el, {
+    ...opt, active: filters.urgency.has(opt.val),
+    onToggle: () => {
+      if (filters.urgency.has(opt.val)) filters.urgency.delete(opt.val);
+      else filters.urgency.add(opt.val);
+      renderUrgencyChips();
+      render();
+    },
+  }));
+}
+
+function renderTypeChips() {
+  const el = document.getElementById('type-chips');
+  el.querySelectorAll('.chip').forEach(c => c.remove());
+  TYPE_OPTIONS.forEach(opt => makeChip(el, {
+    ...opt, active: filters.type.has(opt.val),
+    onToggle: () => {
+      if (filters.type.has(opt.val)) filters.type.delete(opt.val);
+      else filters.type.add(opt.val);
+      renderTypeChips();
+      render();
+    },
+  }));
+}
+
+function renderServiceChips() {
+  const el = document.getElementById('service-chips');
+  el.querySelectorAll('.chip').forEach(c => c.remove());
+  serviceAreaNames.forEach(name => makeChip(el, {
+    val: name, label: name, cls: 'c-accent', active: filters.service.has(name),
+    onToggle: () => {
+      if (filters.service.has(name)) filters.service.delete(name);
+      else filters.service.add(name);
+      renderServiceChips();
+      render();
+    },
+  }));
+}
+
+function renderSpecialChips() {
+  const el = document.getElementById('special-chips');
+  el.querySelectorAll('.chip').forEach(c => c.remove());
+  makeChip(el, {
+    val: 'external-id', label: '🟣 External ID', cls: 'c-purple', active: namespaceOn,
+    onToggle: () => { namespaceOn = !namespaceOn; renderSpecialChips(); render(); if (namespaceOn && typeof umami !== 'undefined') umami.track('extid-filter-used'); },
+  });
+  makeChip(el, {
+    val: 'radar', label: '★ On Radar', cls: 'c-amber', active: radarOn,
+    onToggle: () => { radarOn = !radarOn; renderSpecialChips(); render(); },
+  });
+  const hasProfile = Object.values(profile).some(v => v);
+  if (hasProfile) {
+    makeChip(el, {
+      val: 'tenant', label: '🎯 Matches my environment', cls: 'c-accent', active: tenantOn,
+      onToggle: () => { tenantOn = !tenantOn; renderSpecialChips(); render(); if (tenantOn && typeof umami !== 'undefined') umami.track('tenant-filter-used'); },
+    });
+  }
+}
+
+// ── Active-filters pill strip ───────────────────────────────────────────
+function pillHTML(text, onRemove) {
+  const wrap = document.createElement('span');
+  wrap.className = 'pill';
+  const label = document.createElement('span');
+  label.textContent = text;
+  wrap.appendChild(label);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pill-remove';
+  btn.setAttribute('aria-label', `Remove filter: ${text}`);
+  btn.textContent = '×';
+  btn.addEventListener('click', onRemove);
+  wrap.appendChild(btn);
+  return wrap;
+}
+
+function renderActiveFilters() {
+  const strip = document.getElementById('activeFilters');
+  const holder = document.getElementById('activeFiltersPills');
+  holder.innerHTML = '';
+  const pills = [];
+
+  const urgLabels = Object.fromEntries(URGENCY_OPTIONS.map(o => [o.val, o.label]));
+  filters.urgency.forEach(v => pills.push(pillHTML(urgLabels[v], () => { filters.urgency.delete(v); renderUrgencyChips(); render(); })));
+
+  const typeLabels = Object.fromEntries(TYPE_OPTIONS.map(o => [o.val, o.label]));
+  filters.type.forEach(v => pills.push(pillHTML(typeLabels[v], () => { filters.type.delete(v); renderTypeChips(); render(); })));
+
+  filters.service.forEach(v => pills.push(pillHTML(v, () => { filters.service.delete(v); renderServiceChips(); render(); })));
+
+  if (namespaceOn) pills.push(pillHTML('🟣 External ID', () => { namespaceOn = false; renderSpecialChips(); render(); }));
+  if (radarOn)     pills.push(pillHTML('★ On Radar', () => { radarOn = false; renderSpecialChips(); render(); }));
+  if (tenantOn)    pills.push(pillHTML('🎯 Matches my environment', () => { tenantOn = false; renderSpecialChips(); render(); }));
+  if (sq)          pills.push(pillHTML(`Search: "${sq}"`, () => { sq = ''; document.getElementById('search').value = ''; render(); }));
+
+  pills.forEach(p => holder.appendChild(p));
+  strip.classList.toggle('visible', pills.length > 0);
+}
+
+document.getElementById('clearAllBtn').addEventListener('click', () => {
+  filters.urgency.clear(); filters.type.clear(); filters.service.clear();
+  namespaceOn = false; radarOn = false; tenantOn = false;
+  sq = ''; document.getElementById('search').value = '';
+  hideExpired = true; document.getElementById('hide-expired').checked = true;
+  sortMode = 'default'; document.getElementById('sort-select').value = 'default';
+  renderUrgencyChips(); renderTypeChips(); renderServiceChips(); renderSpecialChips();
+  render();
+});
+
+// ── Shareable filter links — mirror filter state into the URL ──────────
 function updateUrl(){
   const params = new URLSearchParams();
-  if(af !== 'all')   params.set('filter', af);
-  if(as_)            params.set('status', as_);
-  if(sq)             params.set('q', sq);
-  if(!hideExpired)   params.set('expired', '1');
+  if(filters.urgency.size) params.set('urgency', [...filters.urgency].join(','));
+  if(filters.type.size)    params.set('type', [...filters.type].join(','));
+  if(filters.service.size) params.set('service', [...filters.service].join(','));
+  if(namespaceOn) params.set('namespace', 'external-id');
+  if(radarOn)     params.set('radar', '1');
+  if(tenantOn)    params.set('tenant', '1');
+  if(sq)          params.set('q', sq);
+  if(!hideExpired) params.set('expired', '1');
   const qs = params.toString();
   history.replaceState(null, '', qs ? `${location.pathname}?${qs}` : location.pathname);
 }
 
 function applyStateFromUrl(){
   const params = new URLSearchParams(location.search);
-  const knownFilters = Array.from(document.querySelectorAll('.fbtn[data-f]')).map(b => b.dataset.f);
+  const knownUrgency = new Set(URGENCY_OPTIONS.map(o => o.val));
+  const knownType    = new Set(TYPE_OPTIONS.map(o => o.val));
 
-  const f = params.get('filter');
-  if(f && knownFilters.includes(f)) af = f;
+  (params.get('urgency') || '').split(',').filter(v => knownUrgency.has(v)).forEach(v => filters.urgency.add(v));
+  (params.get('type') || '').split(',').filter(v => knownType.has(v)).forEach(v => filters.type.add(v));
+  (params.get('service') || '').split(',').filter(Boolean).forEach(v => filters.service.add(v));
 
-  const s = params.get('status');
-  if(s && ['red','yellow','green','expired'].includes(s)) as_ = s;
+  if(params.get('namespace') === 'external-id') namespaceOn = true;
+  if(params.get('radar') === '1') radarOn = true;
+  if(params.get('tenant') === '1') tenantOn = true;
 
   const q = params.get('q');
   if(q){ sq = q.toLowerCase().trim(); document.getElementById('search').value = q; }
 
   if(params.get('expired') === '1') hideExpired = false;
   document.getElementById('hide-expired').checked = hideExpired;
-
-  document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === af));
-  document.querySelectorAll('.stat-card').forEach(c => c.classList.toggle('active', c.dataset.sf === as_ || c.dataset.sf === af));
 }
 
 function updateStats(items){
@@ -1965,7 +1914,6 @@ function updateStats(items){
   document.getElementById('sn-exp').textContent = c.expired + c.expired_recent;
   document.getElementById('stats').style.display = 'grid';
 
-  // External ID breakdown
   const extItems = items.filter(i => i.namespace === 'external-id');
   const extCount = extItems.length;
   const extUrgent = extItems.filter(i => i.status === 'red').length;
@@ -1976,7 +1924,6 @@ function updateStats(items){
   document.getElementById('sn-extid').textContent = extCount;
   document.getElementById('extid-row').style.display = extCount > 0 ? 'block' : 'none';
 
-  // Pills on the External ID card
   const pillsEl = document.getElementById('extid-urgency-pills');
   const pills = [];
   if(extUrgent > 0) pills.push(`<span class="extid-pill urgent">🔴 ${extUrgent} urgent</span>`);
@@ -1987,7 +1934,6 @@ function updateStats(items){
   pills.push(`<span class="extid-pill info">${extInfo} feature release${extInfo!==1?'s':''}</span>`);
   pillsEl.innerHTML = pills.join('');
 
-  // Context banner counts
   document.getElementById('ctx-red').textContent  = extUrgent;
   document.getElementById('ctx-yel').textContent  = extPlan;
   document.getElementById('ctx-grn').textContent  = extOnradar;
@@ -1996,86 +1942,9 @@ function updateStats(items){
   const allClear = document.getElementById('ctx-all-clear');
   allClear.classList.toggle('show', extUrgent === 0 && extPlan === 0);
 
-  // Tenant stat
   const tenantCount = items.filter(i => itemMatchesProfile(i)).length;
   document.getElementById('sn-tenant').textContent = tenantCount;
 }
-
-// Filter buttons
-document.querySelectorAll('.fbtn[data-f]').forEach(b => {
-  b.addEventListener('click', () => {
-    document.querySelectorAll('.fbtn[data-f]').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    af   = b.dataset.f;
-    as_  = null;
-    document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
-    render();
-  });
-});
-
-// Stat card click — filter by urgency or namespace
-document.querySelectorAll('.stat-card').forEach(c => {
-  c.addEventListener('click', () => {
-    const sf = c.dataset.sf;
-    if(sf === 'tenant') {
-      if(af === 'tenant') {
-        af = 'all';
-        document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
-        c.classList.remove('active');
-      } else {
-        af = 'tenant';
-        document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'tenant'));
-        document.querySelectorAll('.stat-card').forEach(x => x.classList.remove('active'));
-        c.classList.add('active');
-        as_ = null;
-        if(typeof umami !== 'undefined') umami.track('tenant-filter-used');
-      }
-    } else if(sf === 'external-id') {
-      if(af === 'external-id') {
-        af = 'all';
-        document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
-        c.classList.remove('active');
-      } else {
-        af = 'external-id';
-        document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'external-id'));
-        document.querySelectorAll('.stat-card').forEach(x => x.classList.remove('active'));
-        c.classList.add('active');
-        as_ = null;
-        if(typeof umami !== 'undefined') umami.track('extid-filter-used');
-      }
-    } else {
-      if(as_ === sf){
-        as_ = null;
-        c.classList.remove('active');
-      } else {
-        as_ = sf;
-        document.querySelectorAll('.stat-card').forEach(x => x.classList.remove('active'));
-        c.classList.add('active');
-      }
-      if(af === 'tenant' || af === 'external-id') {
-        af = 'all';
-        document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
-      }
-    }
-    render();
-  });
-});
-
-// External ID namespace card click
-const extCard = document.getElementById('stat-extid');
-if(extCard) extCard.addEventListener('click', () => {
-  if(af === 'external-id') {
-    af = 'all';
-    document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
-  } else {
-    af = 'external-id';
-    document.querySelectorAll('.fbtn[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === 'external-id'));
-    document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
-    as_ = null;
-    if(typeof umami !== 'undefined') umami.track('extid-filter-used');
-  }
-  render();
-});
 
 // Search
 document.getElementById('search').addEventListener('input', e => {
@@ -2083,7 +1952,7 @@ document.getElementById('search').addEventListener('input', e => {
   render();
 });
 
-// Copy link — shares the current filter/search/status as a URL
+// Copy link — shares the current filter/search state as a URL
 document.getElementById('copyLinkBtn').addEventListener('click', async e => {
   const btn = e.currentTarget;
   try {
@@ -2091,7 +1960,7 @@ document.getElementById('copyLinkBtn').addEventListener('click', async e => {
     const label = btn.innerHTML;
     btn.classList.add('copied');
     btn.textContent = '✓ Link copied';
-    if(typeof umami !== 'undefined') umami.track('copy-filtered-link', { filter: af });
+    if(typeof umami !== 'undefined') umami.track('copy-filtered-link');
     setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = label; }, 1200);
   } catch(err) {
     console.error('copy failed:', err.message);
@@ -2110,14 +1979,7 @@ document.getElementById('sort-select').addEventListener('change', e => {
   render();
 });
 
-// Service-category select -- filters by the taxonomy-normalised serviceCategory,
-// independent of the type filter (retirement/breaking/preview/new) above.
-document.getElementById('svc-category-select').addEventListener('change', e => {
-  svcFilter = e.target.value;
-  render();
-});
-
-// Populate the service-category select from the single taxonomy definition
+// Populate the service-area chips from the single taxonomy definition
 // (Phase 2) rather than from whatever categories happen to appear in the
 // current dataset -- so the list is stable even when a service area has
 // zero live items right now.
@@ -2126,15 +1988,10 @@ async function loadTaxonomy() {
     const res = await fetch(API + '/taxonomy', { mode: 'cors', credentials: 'omit' });
     if (!res.ok) return;
     const data = await res.json();
-    const sel = document.getElementById('svc-category-select');
-    for (const entry of (data.taxonomy || [])) {
-      const opt = document.createElement('option');
-      opt.value = entry.name;
-      opt.textContent = entry.name;
-      sel.appendChild(opt);
-    }
+    serviceAreaNames = (data.taxonomy || []).map(e => e.name);
+    renderServiceChips();
     const coverageEl = document.getElementById('methodology-coverage');
-    if (coverageEl) coverageEl.textContent = (data.taxonomy || []).map(e => e.name).join(' · ');
+    if (coverageEl) coverageEl.textContent = serviceAreaNames.join(' · ');
   } catch (e) {
     const coverageEl = document.getElementById('methodology-coverage');
     if (coverageEl) coverageEl.textContent = 'Coverage list unavailable right now.';
@@ -2191,18 +2048,13 @@ loadHealth();
 function initSubscribe() {
   const subBtn = document.getElementById('subBtn');
   const subPop = document.getElementById('subPop');
-
-  if (!subBtn || !subPop) {
-    console.error('Subscribe elements not found: subBtn=' + !!subBtn + ', subPop=' + !!subPop);
-    return;
-  }
-  console.log('Subscribe button initialized');
+  if (!subBtn || !subPop) return;
 
   function syncSubscribePrimary() {
     const rssFullRow = document.querySelector('[data-row="rss-full"]');
     const rssExtIdRow = document.querySelector('[data-row="rss-extid"]');
     if (rssFullRow && rssExtIdRow) {
-      if (af === 'external-id') {
+      if (namespaceOn) {
         rssExtIdRow.classList.add('primary');
         rssFullRow.classList.remove('primary');
       } else {
@@ -2243,10 +2095,7 @@ function initSubscribe() {
       e.stopPropagation();
       const url = btn.dataset.url;
       const row = btn.closest('[data-row]')?.dataset.row;
-      if (!url || !row) {
-        console.warn('Missing url or row data', { url, row });
-        return;
-      }
+      if (!url || !row) return;
       try {
         await navigator.clipboard.writeText(url);
         btn.classList.add('copied');
@@ -2280,8 +2129,11 @@ async function load(){
     }) + ' UTC';
 
     loadRadar();
-    loadProfile();
+    loadEnvProfile();
     applyStateFromUrl();
+    renderUrgencyChips();
+    renderTypeChips();
+    renderSpecialChips();
     updateStats(all);
     render();
 
@@ -2308,4 +2160,4 @@ initSubscribe();
 
 <!-- Cloudflare Pages Analytics — replace with your own token at dash.cloudflare.com --></body>
 </html>
-<!-- Pages rebuild trigger: 1780228263 -->
+<!-- Pages rebuild trigger: 1780228264 -->

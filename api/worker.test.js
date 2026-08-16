@@ -48,6 +48,13 @@ import {
   correlateRoadmapItems,
   persistRoadmapCandidates,
   ROADMAP_CANDIDATES_KEY,
+  toICS,
+  icsEventLines,
+  icsEscapeText,
+  foldICSLine,
+  selectByNamespace,
+  toCSV,
+  toRSS,
 } from './worker.js';
 import workerDefault from './worker.js';
 
@@ -1346,6 +1353,166 @@ describe('buildTrackerData (Phase 5): roadmap wired into the real pipeline', () 
     const data = await buildTrackerData([], {});
     const envelopeKeys = Object.keys(data).sort();
     assert.deepEqual(envelopeKeys, [
+      'coldStart', 'count', 'crossSourceMerged', 'dedupeDropped', 'degraded',
+      'errors', 'externalIdCount', 'items', 'lastUpdated', 'newCount',
+      'sources', 'unmatched', 'unmatchedSamples', 'warnings',
+    ].sort());
+  });
+});
+
+// ── .ICS CALENDAR FEED (frontend-redesign work order, Part B) ──────────────
+
+describe('icsEscapeText', () => {
+  test('escapes backslash, comma, semicolon, newline in RFC 5545 order', () => {
+    assert.equal(icsEscapeText('a,b;c\\d\ne'), 'a\\,b\\;c\\\\d\\ne');
+  });
+  test('normalises CRLF to a single escaped \\n', () => {
+    assert.equal(icsEscapeText('a\r\nb'), 'a\\nb');
+  });
+  test('null/undefined -> empty string, never throws', () => {
+    assert.equal(icsEscapeText(null), '');
+    assert.equal(icsEscapeText(undefined), '');
+  });
+});
+
+describe('foldICSLine', () => {
+  test('a short line is returned unchanged', () => {
+    assert.equal(foldICSLine('SUMMARY:short'), 'SUMMARY:short');
+  });
+  test('a line over 75 UTF-8 octets is folded with a single-space continuation, every physical line <= 75 bytes', () => {
+    const long = 'DESCRIPTION:' + 'x'.repeat(120);
+    const folded = foldICSLine(long);
+    const physicalLines = folded.split('\r\n');
+    assert.ok(physicalLines.length > 1);
+    const enc = new TextEncoder();
+    assert.ok(physicalLines.every(l => enc.encode(l).length <= 75));
+    assert.ok(physicalLines.slice(1).every(l => l.startsWith(' ')));
+    // Rejoining (stripping the fold) must reconstruct the exact original content.
+    assert.equal(physicalLines.map((l, i) => i === 0 ? l : l.slice(1)).join(''), long);
+  });
+  test('does not split a multi-byte code point (emoji) across a fold boundary', () => {
+    const long = 'SUMMARY:' + '\u{1F534}'.repeat(30); // red circle emoji, 4 bytes each in UTF-8
+    const folded = foldICSLine(long);
+    // Every physical line must itself be valid UTF-16 (no lone surrogate),
+    // which JS strings guarantee are well-formed here -- the real check is
+    // that no fold occurred mid-codepoint, i.e. re-joining reconstructs the
+    // original string exactly.
+    const rejoined = folded.split('\r\n').map((l, i) => i === 0 ? l : l.slice(1)).join('');
+    assert.equal(rejoined, long);
+  });
+});
+
+describe('icsEventLines', () => {
+  const dtstamp = '20260816T120000Z';
+  test('dateless item -> null, skipped rather than throwing', () => {
+    assert.equal(icsEventLines({ id: 'x', title: 't', deadline: null }, dtstamp), null);
+  });
+  test('malformed deadline string -> null', () => {
+    assert.equal(icsEventLines({ id: 'x', title: 't', deadline: 'not-a-date' }, dtstamp), null);
+  });
+  test('builds a valid all-day VEVENT with DTEND the day after DTSTART', () => {
+    const block = icsEventLines({
+      id: 'abc', title: 'Retiring thing', category: 'retirement', status: 'red',
+      deadline: '2026-10-01', deadlineConfidence: 'stated', serviceCategory: 'Conditional Access',
+      evidence: { tier: 'A' }, link: 'https://example.invalid/x',
+    }, dtstamp);
+    assert.match(block, /DTSTART;VALUE=DATE:20261001/);
+    assert.match(block, /DTEND;VALUE=DATE:20261002/);
+    assert.match(block, /UID:abc@entratracker\.aboutcloud\.io/);
+    assert.match(block, /^BEGIN:VEVENT/);
+    assert.match(block, /END:VEVENT$/);
+    assert.match(block, /BEGIN:VALARM[\s\S]*TRIGGER:-P3D[\s\S]*END:VALARM/);
+    assert.doesNotMatch(block, /^~/m, 'stated confidence must not get the tentative marker');
+  });
+  test('inferred-confidence deadline is included, not excluded, with a leading "~" tentative marker', () => {
+    const block = icsEventLines({
+      id: 'inf1', title: 'Maybe retiring', category: 'breaking', status: 'yellow',
+      deadline: '2026-12-01', deadlineConfidence: 'inferred',
+    }, dtstamp);
+    assert.match(block, /SUMMARY:.*~Maybe retiring/);
+    assert.match(block, /unconfirmed/);
+  });
+  test('escapes commas/semicolons in the title within SUMMARY', () => {
+    const block = icsEventLines({
+      id: 'esc1', title: 'A, B; C', category: 'new_feature', status: 'green', deadline: '2026-09-01',
+    }, dtstamp);
+    assert.match(block, /SUMMARY:.*A\\, B\\; C/);
+  });
+});
+
+describe('toICS', () => {
+  test('one VEVENT per item with a deadline; dateless items produce no VEVENT', () => {
+    const items = [
+      { id: 'a', title: 'Dated',    category: 'retirement', status: 'red', deadline: '2026-10-01' },
+      { id: 'b', title: 'Dateless', category: 'new_feature', status: 'green', deadline: null },
+    ];
+    const ics = toICS(items, null);
+    assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 1);
+    assert.equal(ics.includes('Dateless'), false);
+  });
+  test('output uses CRLF exclusively, starts BEGIN:VCALENDAR and ends END:VCALENDAR', () => {
+    const ics = toICS([{ id: 'a', title: 'X', category: 'new_feature', status: 'green', deadline: '2026-09-01' }], null);
+    assert.ok(ics.startsWith('BEGIN:VCALENDAR\r\n'));
+    assert.ok(ics.endsWith('END:VCALENDAR\r\n'));
+    // Every line break in the document is a CRLF pair -- no bare \n anywhere.
+    assert.equal(/(?<!\r)\n/.test(ics), false);
+  });
+  test('namespace=external-id filters events the same way selectByNamespace filters items', () => {
+    const items = [
+      { id: 'a', title: 'Workforce', namespace: 'entra-id',    category: 'retirement', status: 'red', deadline: '2026-10-01' },
+      { id: 'b', title: 'ExternalID', namespace: 'external-id', category: 'retirement', status: 'red', deadline: '2026-10-01' },
+    ];
+    const ics = toICS(selectByNamespace(items, 'external-id'), 'external-id');
+    assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 1);
+    assert.ok(ics.includes('ExternalID'));
+    assert.equal(ics.includes('Workforce'), false);
+    assert.match(ics, /X-WR-CALNAME:Entra Change Tracker \(External ID\)/);
+  });
+  test('non-fatal: one malformed item is skipped, the rest of the calendar still builds', () => {
+    const items = [
+      { id: 'good', title: 'Fine', category: 'new_feature', status: 'green', deadline: '2026-09-01' },
+      { id: 'bad',  title: 'Broken', category: 'new_feature', status: 'green', deadline: '2026-13-99' }, // invalid month/day
+      { id: 'good2', title: 'Also fine', category: 'new_feature', status: 'green', deadline: '2026-09-02' },
+    ];
+    const ics = toICS(items, null);
+    assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 2);
+    assert.ok(ics.includes('Fine'));
+    assert.ok(ics.includes('Also fine'));
+    assert.equal(ics.includes('Broken'), false);
+  });
+  test('empty item list still produces a structurally valid (header-only) calendar', () => {
+    const ics = toICS([], null);
+    assert.ok(ics.startsWith('BEGIN:VCALENDAR\r\n'));
+    assert.ok(ics.endsWith('END:VCALENDAR\r\n'));
+    assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 0);
+  });
+});
+
+describe('No pipeline diff: JSON/CSV/RSS output unaffected by the .ics addition', () => {
+  const sampleItems = [{
+    id: 'a', title: 'A retiring thing', category: 'retirement', impact: 'high', status: 'red',
+    announcedDate: '2026-01-01', firstSeen: '2026-01-01', deadline: '2026-10-01', daysRemaining: 46,
+    namespace: 'entra-id', link: 'https://example.invalid/a', description: 'desc',
+  }];
+
+  test('toCSV column set and row shape unchanged (header + exact field order)', () => {
+    const csv = toCSV(sampleItems);
+    const [header] = csv.split('\r\n');
+    assert.equal(header, 'title,category,impact,status,announcedDate,firstSeen,deadline,daysRemaining,namespace,link');
+  });
+
+  test('toRSS root structure unchanged (rss/channel/item, no new top-level elements)', () => {
+    const rss = toRSS(sampleItems, null);
+    assert.ok(rss.startsWith('<?xml version="1.0" encoding="UTF-8"?>'));
+    assert.match(rss, /<rss version="2.0"[^>]*>[\s\S]*<channel>[\s\S]*<item>[\s\S]*<\/item>[\s\S]*<\/channel>[\s\S]*<\/rss>/);
+  });
+
+  test('buildTrackerData envelope keys unchanged (no envelope-level field added for .ics -- it is response-format-only, not data)', async (t) => {
+    const originalFetch = global.fetch;
+    t.after(() => { global.fetch = originalFetch; });
+    global.fetch = mockFetchFor;
+    const data = await buildTrackerData([], {});
+    assert.deepEqual(Object.keys(data).sort(), [
       'coldStart', 'count', 'crossSourceMerged', 'dedupeDropped', 'degraded',
       'errors', 'externalIdCount', 'items', 'lastUpdated', 'newCount',
       'sources', 'unmatched', 'unmatchedSamples', 'warnings',

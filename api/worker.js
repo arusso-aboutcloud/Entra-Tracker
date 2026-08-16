@@ -1034,6 +1034,136 @@ function selectByNamespace(items, ns) {
   return ns === 'external-id' ? items.filter(i => i.namespace === 'external-id') : items;
 }
 
+// ── .ICS CALENDAR HELPER (frontend-redesign work order, Part B) ────────────
+// Hand-built strings, no library (rule 4) -- the format is trivial for the
+// one-event-type, all-day-only subset this needs.
+const ICS_CATEGORY_LABELS = { retirement: 'Retiring', breaking: 'Breaking', preview: 'Preview', new_feature: 'New' };
+const ICS_URGENCY_MARKER  = { red: '\u{1F534}', yellow: '\u{1F7E1}', green: '\u{1F7E2}', expired: '⚫', expired_recent: '⚫' };
+
+// RFC 5545 TEXT escaping: backslash, then comma/semicolon, then newlines.
+// Order matters -- escaping backslash first avoids double-escaping the
+// backslashes this function itself just inserted.
+function icsEscapeText(s) {
+  return String(s == null ? '' : s)
+    .replace(/\r\n/g, '\n')
+    .replace(/\\/g, '\\\\')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;')
+    .replace(/\n/g, '\\n');
+}
+
+// RFC 5545 line folding: no content line may exceed 75 octets (UTF-8 bytes,
+// not characters -- SUMMARY can carry an emoji urgency marker), continuation
+// lines prefixed with a single space. Iterates by code point (not UTF-16
+// code unit) so an astral character (emoji) is never split across a fold.
+function foldICSLine(line) {
+  const encoder = new TextEncoder();
+  if (encoder.encode(line).length <= 75) return line;
+  const parts = [];
+  let cur = '', curBytes = 0, limit = 75;
+  for (const ch of line) {
+    const chBytes = encoder.encode(ch).length;
+    if (curBytes + chBytes > limit) {
+      parts.push(cur);
+      cur = ''; curBytes = 0;
+      limit = 74; // continuation lines reserve 1 byte for the leading space
+    }
+    cur += ch;
+    curBytes += chBytes;
+  }
+  if (cur) parts.push(cur);
+  return parts.join('\r\n ');
+}
+
+// One VEVENT per item, or null (skipped, not thrown) for anything that
+// can't build a valid all-day date -- non-fatal per event, per the work
+// order's "a malformed single item must not corrupt the whole calendar"
+// rule. Includes items whose deadline is 'inferred'-confidence (a leading
+// "~" in SUMMARY marks it tentative, same hedge the frontend already shows
+// as "possible date... unconfirmed" -- excluding them outright would throw
+// away real information a subscriber might still want).
+function icsEventLines(item, dtstamp) {
+  const d = item.deadline;
+  if (!d) return null;
+  const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const yN = Number(m[1]), moN = Number(m[2]), dayN = Number(m[3]);
+  const start = new Date(Date.UTC(yN, moN - 1, dayN));
+  const end   = new Date(Date.UTC(yN, moN - 1, dayN + 1)); // DTEND is exclusive for all-day events
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+  // Date.UTC silently rolls over an out-of-range month/day (e.g. month 13
+  // becomes January of the next year) instead of failing -- reject anything
+  // that didn't round-trip back to the exact input, rather than silently
+  // publishing a wrong date on a calendar a subscriber trusts.
+  if (start.getUTCFullYear() !== yN || start.getUTCMonth() !== moN - 1 || start.getUTCDate() !== dayN) return null;
+  const fmt = (dt) => dt.toISOString().split('T')[0].replace(/-/g, '');
+
+  const marker    = ICS_URGENCY_MARKER[item.status] || '';
+  const tentative = item.deadlineConfidence === 'inferred' ? '~' : '';
+  const summary   = `${marker} ${tentative}${item.title || ''}`.trim();
+
+  const descLines = [
+    `Category: ${ICS_CATEGORY_LABELS[item.category] || item.category || 'Unknown'}`,
+    item.serviceCategory ? `Service area: ${item.serviceCategory}` : null,
+    item.evidence && item.evidence.tier ? `Evidence tier: ${item.evidence.tier}` : null,
+    item.deadlineConfidence
+      ? `Deadline confidence: ${item.deadlineConfidence}` + (item.deadlineConfidence === 'inferred' ? ' (unconfirmed -- verify against the source before relying on this date)' : '')
+      : null,
+    item.link ? `Source: ${item.link}` : null,
+  ].filter(Boolean).join('\n');
+
+  const uid = `${item.id}@entratracker.aboutcloud.io`;
+  const lines = [
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${dtstamp}`,
+    `DTSTART;VALUE=DATE:${fmt(start)}`,
+    `DTEND;VALUE=DATE:${fmt(end)}`,
+    `SUMMARY:${icsEscapeText(summary)}`,
+    `DESCRIPTION:${icsEscapeText(descLines)}`,
+    item.link ? `URL:${icsEscapeText(item.link)}` : null,
+    'BEGIN:VALARM',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${icsEscapeText('Reminder: ' + (item.title || ''))}`,
+    'TRIGGER:-P3D', // 3 days before DTSTART -- "a few days before"
+    'END:VALARM',
+    'END:VEVENT',
+  ].filter(Boolean);
+  return lines.map(foldICSLine).join('\r\n');
+}
+
+// One VEVENT per item with a real deadline, unfiltered by status -- past
+// (expired) deadlines are included same as CSV's export does; a calendar
+// client naturally shows a past event as past, no need to hide it
+// server-side. Dateless items are skipped (nothing to put on a calendar).
+function toICS(items, namespace) {
+  const dtstamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  const suffix  = namespace === 'external-id' ? ' (External ID)' : '';
+  const blocks  = [];
+  for (const it of items) {
+    if (!it.deadline) continue;
+    try {
+      const block = icsEventLines(it, dtstamp);
+      if (block) blocks.push(block);
+    } catch (e) {
+      console.error('ics event build (non-fatal, skipped):', e && e.message);
+    }
+  }
+  const header = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//AboutCloud.io//Entra Change Tracker//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    `NAME:Entra Change Tracker${suffix}`,
+    `X-WR-CALNAME:Entra Change Tracker${suffix}`,
+    `X-WR-CALDESC:${icsEscapeText('Deadlines for Microsoft Entra ID retirements, breaking changes and previews' + suffix)}`,
+    'X-WR-TIMEZONE:UTC',
+    'REFRESH-INTERVAL;VALUE=DURATION:PT4H', // matches the actual 4h cron cadence
+  ].map(foldICSLine).join('\r\n');
+  return [header, ...blocks, 'END:VCALENDAR'].join('\r\n') + '\r\n';
+}
+
 // ── FETCH HELPER ────────────────────────────────────────────────────────────
 async function fetchText(url) {
   const res = await fetch(url, {
@@ -2531,6 +2661,17 @@ export default {
               },
             });
           }
+          if (format === 'ics') {
+            const data = JSON.parse(cached);
+            return new Response(toICS(selectByNamespace(data.items || [], nsParam), nsParam), {
+              headers: {
+                'Content-Type':  'text/calendar; charset=utf-8',
+                'X-Cache':       'HIT',
+                'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
+                ...corsHeaders(origin),
+              },
+            });
+          }
           return new Response(cached, {
             headers: {
               'Content-Type':  'application/json',
@@ -2578,6 +2719,17 @@ export default {
         return new Response(toRSS(selectByNamespace(data.items || [], nsParam), nsParam), {
           headers: {
             'Content-Type':  'application/rss+xml; charset=utf-8',
+            'X-Cache':       'MISS',
+            'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
+            ...corsHeaders(origin),
+          },
+        });
+      }
+
+      if (format === 'ics') {
+        return new Response(toICS(selectByNamespace(data.items || [], nsParam), nsParam), {
+          headers: {
+            'Content-Type':  'text/calendar; charset=utf-8',
             'X-Cache':       'MISS',
             'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
             ...corsHeaders(origin),
@@ -2651,6 +2803,7 @@ export {
   parseFSLogixDocs,
   parseGraphChangelog,
   parseExternalIdCommits,
+  toCSV,
   toRSS,
   SERVICE_TAXONOMY,
   classifyTaxonomy,
@@ -2682,4 +2835,9 @@ export {
   persistRoadmapCandidates,
   ROADMAP_CANDIDATES_KEY,
   ROADMAP_CANDIDATES_CAP,
+  toICS,
+  icsEventLines,
+  icsEscapeText,
+  foldICSLine,
+  selectByNamespace,
 };
