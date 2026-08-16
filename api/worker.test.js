@@ -55,6 +55,12 @@ import {
   selectByNamespace,
   toCSV,
   toRSS,
+  ITEM_ID_RE,
+  HISTORY_ROW_CAP,
+  shapeRevisionRow,
+  computeDeadlineHistory,
+  computeDeadlineChangeCounts,
+  fetchItemHistory,
 } from './worker.js';
 import workerDefault from './worker.js';
 
@@ -1517,5 +1523,308 @@ describe('No pipeline diff: JSON/CSV/RSS output unaffected by the .ics addition'
       'errors', 'externalIdCount', 'items', 'lastUpdated', 'newCount',
       'sources', 'unmatched', 'unmatchedSamples', 'warnings',
     ].sort());
+  });
+});
+
+// ── SLIP-HISTORY READ PATH (net-new, read-only against the Phase 3 store) ──
+// A dedicated, tightly-scoped fake D1 -- understands exactly the two query
+// shapes computeDeadlineChangeCounts()/fetchItemHistory() issue (detected
+// by a distinguishing SQL fragment), not a general SQL engine, same
+// philosophy as makeFakeD1() above (which is scoped to writeRevisions()'s
+// own two shapes and is NOT reused here since it doesn't understand WHERE/
+// ORDER BY/LIMIT/window functions at all -- it just returns every stored
+// row for any SELECT).
+function makeHistoryFakeD1(allRows) {
+  const rows = allRows.map(r => ({ ...r }));
+  return {
+    _rows: rows,
+    prepare(sql) {
+      const isAggregate   = /LAG\(deadline\)/.test(sql);
+      const isItemHistory = /WHERE item_id = \?/.test(sql);
+      return {
+        bind(...args) {
+          return {
+            async all() {
+              if (isItemHistory) {
+                const [itemId, limit] = args;
+                const results = rows
+                  .filter(r => r.item_id === itemId)
+                  .sort((a, b) => (a.observed_at < b.observed_at ? -1 : a.observed_at > b.observed_at ? 1 : a.id - b.id))
+                  .slice(0, limit);
+                return { results };
+              }
+              if (isAggregate) {
+                const ids = new Set(args);
+                const byItem = new Map();
+                for (const r of rows) {
+                  if (!ids.has(r.item_id)) continue;
+                  if (!byItem.has(r.item_id)) byItem.set(r.item_id, []);
+                  byItem.get(r.item_id).push(r);
+                }
+                const results = [];
+                for (const [item_id, itemRows] of byItem) {
+                  const sorted = itemRows.slice().sort((a, b) => a.id - b.id);
+                  let changes = 0;
+                  for (let i = 1; i < sorted.length; i++) {
+                    if (sorted[i].deadline !== sorted[i - 1].deadline) changes++;
+                  }
+                  if (changes > 0) results.push({ item_id, changes });
+                }
+                return { results };
+              }
+              return { results: [] };
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
+function makeThrowingHistoryD1() {
+  return { prepare() { throw new Error('D1 connection failed (simulated)'); } };
+}
+
+describe('ITEM_ID_RE', () => {
+  test('matches the real 8-hex-char fnv1a id shape and nothing else', () => {
+    assert.ok(ITEM_ID_RE.test('6ec464da'));
+    assert.ok(ITEM_ID_RE.test('00000000'));
+    assert.equal(ITEM_ID_RE.test('6EC464DA'), false, 'fnv1a() output is lowercase only');
+    assert.equal(ITEM_ID_RE.test('6ec464d'), false, 'too short');
+    assert.equal(ITEM_ID_RE.test('6ec464da1'), false, 'too long');
+    assert.equal(ITEM_ID_RE.test('../etc/passwd'), false);
+    assert.equal(ITEM_ID_RE.test(''), false);
+  });
+});
+
+describe('shapeRevisionRow', () => {
+  test('maps D1 snake_case columns to the API\'s camelCase vocabulary', () => {
+    const shaped = shapeRevisionRow({
+      observed_at: '2026-08-16T15:00:00.000Z', title: 'T', category: 'breaking', status: 'yellow',
+      deadline: '2026-10-01', deadline_confidence: 'stated', announced_date: '2026-06-01',
+      service_category: 'Conditional Access', changed_fields: '["deadline"]',
+    });
+    assert.deepEqual(shaped, {
+      observedAt: '2026-08-16T15:00:00.000Z', title: 'T', category: 'breaking', status: 'yellow',
+      deadline: '2026-10-01', deadlineConfidence: 'stated', announcedDate: '2026-06-01',
+      serviceCategory: 'Conditional Access', changedFields: ['deadline'],
+    });
+  });
+  test('null columns pass through as null, not undefined or the string "null"', () => {
+    const shaped = shapeRevisionRow({ observed_at: 't', title: null, category: null, status: null, deadline: null, deadline_confidence: null, announced_date: null, service_category: null, changed_fields: '[]' });
+    assert.equal(shaped.deadline, null);
+    assert.equal(shaped.title, null);
+  });
+  test('malformed changed_fields JSON falls back to an empty array rather than throwing', () => {
+    const shaped = shapeRevisionRow({ observed_at: 't', changed_fields: 'not json' });
+    assert.deepEqual(shaped.changedFields, []);
+  });
+});
+
+describe('computeDeadlineHistory (run-length-encodes the deadline column)', () => {
+  test('a single revision -> single-entry history (the baseline, not a "change")', () => {
+    const history = computeDeadlineHistory([{ deadline: null, observedAt: 't1' }]);
+    assert.deepEqual(history, [{ deadline: null, observedAt: 't1' }]);
+  });
+  test('an unchanged deadline across many revisions (e.g. only the title reworded each time) collapses to one entry', () => {
+    const revisions = [
+      { deadline: '2026-10-01', observedAt: 't1' },
+      { deadline: '2026-10-01', observedAt: 't2' },
+      { deadline: '2026-10-01', observedAt: 't3' },
+    ];
+    assert.deepEqual(computeDeadlineHistory(revisions), [{ deadline: '2026-10-01', observedAt: 't1' }]);
+  });
+  test('a real slip sequence collapses to the distinct-value sequence, not one entry per revision', () => {
+    const revisions = [
+      { deadline: null,         observedAt: 't1' },
+      { deadline: '2025-06-01', observedAt: 't2' },
+      { deadline: '2025-06-01', observedAt: 't3' }, // unchanged -- e.g. status drifted, not deadline
+      { deadline: '2025-10-01', observedAt: 't4' },
+      { deadline: '2025-10-01', observedAt: 't5' },
+      { deadline: '2026-03-01', observedAt: 't6' },
+    ];
+    assert.deepEqual(computeDeadlineHistory(revisions), [
+      { deadline: null,         observedAt: 't1' },
+      { deadline: '2025-06-01', observedAt: 't2' },
+      { deadline: '2025-10-01', observedAt: 't4' },
+      { deadline: '2026-03-01', observedAt: 't6' },
+    ]);
+  });
+  test('a deadline that is later cleared (date -> null) is tracked as a real transition, not ignored', () => {
+    const revisions = [{ deadline: '2026-10-01', observedAt: 't1' }, { deadline: null, observedAt: 't2' }];
+    assert.deepEqual(computeDeadlineHistory(revisions), [
+      { deadline: '2026-10-01', observedAt: 't1' },
+      { deadline: null, observedAt: 't2' },
+    ]);
+  });
+});
+
+describe('computeDeadlineChangeCounts (§B batch build-time aggregate)', () => {
+  test('no env.TRACKER_DB -> empty map, non-fatal', async () => {
+    const counts = await computeDeadlineChangeCounts(undefined, [{ id: 'a' }]);
+    assert.equal(counts.size, 0);
+  });
+  test('empty item list -> empty map, no D1 call at all', async () => {
+    let called = false;
+    const db = { prepare() { called = true; return { bind: () => ({ async all() { return { results: [] }; } }) }; } };
+    const counts = await computeDeadlineChangeCounts({ TRACKER_DB: db }, []);
+    assert.equal(counts.size, 0);
+    assert.equal(called, false);
+  });
+  test('a real slip is counted correctly; an item whose deadline never changed is absent from the map (defaults to 0 downstream)', async () => {
+    const db = makeHistoryFakeD1([
+      { id: 1, item_id: 'slipped1', deadline: null },
+      { id: 2, item_id: 'slipped1', deadline: '2025-06-01' },
+      { id: 3, item_id: 'slipped1', deadline: '2025-10-01' },
+      { id: 4, item_id: 'stable1', deadline: '2026-01-01' },
+      { id: 5, item_id: 'stable1', deadline: '2026-01-01' }, // re-written for an unrelated field change
+    ]);
+    const counts = await computeDeadlineChangeCounts({ TRACKER_DB: db }, [{ id: 'slipped1' }, { id: 'stable1' }]);
+    assert.equal(counts.get('slipped1'), 2);
+    assert.equal(counts.has('stable1'), false);
+  });
+  test('scoped to only the requested item ids -- a change on an item NOT in the current build does not leak in', async () => {
+    const db = makeHistoryFakeD1([
+      { id: 1, item_id: 'not-in-build', deadline: null },
+      { id: 2, item_id: 'not-in-build', deadline: '2026-01-01' },
+    ]);
+    const counts = await computeDeadlineChangeCounts({ TRACKER_DB: db }, [{ id: 'in-build' }]);
+    assert.equal(counts.size, 0);
+  });
+  test('a throwing D1 is non-fatal -- empty map, caller falls back to 0 for every item', async () => {
+    const counts = await computeDeadlineChangeCounts({ TRACKER_DB: makeThrowingHistoryD1() }, [{ id: 'a' }]);
+    assert.equal(counts.size, 0);
+  });
+});
+
+describe('fetchItemHistory (§A read endpoint\'s data layer)', () => {
+  test('no env.TRACKER_DB -> null (distinct from "genuinely no history")', async () => {
+    assert.equal(await fetchItemHistory(undefined, 'abcd1234'), null);
+  });
+  test('unknown item id -> a clean, well-formed "not found" shape, not null and not an error', async () => {
+    const db = makeHistoryFakeD1([]);
+    const result = await fetchItemHistory({ TRACKER_DB: db }, 'abcd1234');
+    assert.deepEqual(result, { itemId: 'abcd1234', found: false, revisions: [], deadlineHistory: [], deadlineChangeCount: 0 });
+  });
+  test('a real multi-revision item returns ordered revisions, deadlineHistory, and a correct deadlineChangeCount', async () => {
+    const db = makeHistoryFakeD1([
+      { id: 1, item_id: 'x1', observed_at: '2026-06-01T00:00:00.000Z', title: 'Old title', category: 'preview', status: 'green', deadline: null, deadline_confidence: null, announced_date: '2026-06-01', service_category: 'Conditional Access', changed_fields: '[]' },
+      { id: 2, item_id: 'x1', observed_at: '2026-07-01T00:00:00.000Z', title: 'New title', category: 'breaking', status: 'yellow', deadline: '2026-10-01', deadline_confidence: 'stated', announced_date: '2026-06-01', service_category: 'Conditional Access', changed_fields: '["title","category","status","deadline","deadlineConfidence"]' },
+      { id: 3, item_id: 'x1', observed_at: '2026-08-01T00:00:00.000Z', title: 'New title', category: 'breaking', status: 'red', deadline: '2026-09-01', deadline_confidence: 'stated', announced_date: '2026-06-01', service_category: 'Conditional Access', changed_fields: '["status","deadline"]' },
+    ]);
+    const result = await fetchItemHistory({ TRACKER_DB: db }, 'x1');
+    assert.equal(result.itemId, 'x1');
+    assert.equal(result.found, true);
+    assert.equal(result.revisions.length, 3);
+    assert.equal(result.revisions[0].changedFields.length, 0, 'the baseline revision must not claim every field "changed"');
+    assert.deepEqual(result.revisions[2].changedFields, ['status', 'deadline']);
+    assert.deepEqual(result.deadlineHistory, [
+      { deadline: null,         observedAt: '2026-06-01T00:00:00.000Z' },
+      { deadline: '2026-10-01', observedAt: '2026-07-01T00:00:00.000Z' },
+      { deadline: '2026-09-01', observedAt: '2026-08-01T00:00:00.000Z' },
+    ]);
+    assert.equal(result.deadlineChangeCount, 2);
+  });
+  test('row cap is applied via LIMIT, not fetched-then-sliced client side', async () => {
+    let boundLimit = null;
+    const db = {
+      prepare() {
+        return { bind(...args) { boundLimit = args[1]; return { async all() { return { results: [] }; } }; } };
+      },
+    };
+    await fetchItemHistory({ TRACKER_DB: db }, 'x1');
+    assert.equal(boundLimit, HISTORY_ROW_CAP);
+  });
+  test('a throwing D1 returns null, not a thrown error and not a false "not found"', async () => {
+    const result = await fetchItemHistory({ TRACKER_DB: makeThrowingHistoryD1() }, 'x1');
+    assert.equal(result, null);
+  });
+});
+
+describe('buildTrackerData: deadlineChangeCount wiring (§B)', () => {
+  test('every item gets an additive deadlineChangeCount; non-fatal on D1 failure (all zeros), rest of envelope unaffected', async (t) => {
+    const originalFetch = global.fetch;
+    t.after(() => { global.fetch = originalFetch; });
+    global.fetch = mockFetchFor;
+
+    const noD1 = await buildTrackerData([], {});
+    assert.ok(noD1.items.length > 0);
+    assert.ok(noD1.items.every(i => i.deadlineChangeCount === 0));
+
+    const throwD1 = await buildTrackerData([], { TRACKER_DB: makeThrowingHistoryD1() });
+    assert.ok(throwD1.items.every(i => i.deadlineChangeCount === 0));
+
+    const strip = (data) => { const { lastUpdated, items, ...rest } = data; return rest; };
+    const stripItems = (items) => items.map(({ deadlineChangeCount, ...rest }) => rest);
+    assert.deepEqual(strip(noD1), strip(throwD1));
+    assert.deepEqual(stripItems(noD1.items), stripItems(throwD1.items));
+  });
+});
+
+describe('GET /entra-tracker/history/:itemId -- real route (workerDefault.fetch)', () => {
+  test('invalid item id shape -> 404 clean empty body, and D1 is never even queried', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async (...args) => { throw new Error('unexpected upstream fetch: ' + args[0]); };
+    try {
+      const throwingD1 = makeThrowingHistoryD1(); // if this gets called at all, the test fails via the thrown error propagating as a 500 instead of the expected clean 404
+      const req = new Request('https://api.aboutcloud.io/entra-tracker/history/not-a-valid-id!!', { headers: { Origin: 'https://tracker.aboutcloud.io' } });
+      const res = await workerDefault.fetch(req, { TRACKER_DB: throwingD1 });
+      assert.equal(res.status, 404);
+      const body = await res.json();
+      assert.deepEqual(body, { itemId: 'not-a-valid-id!!', found: false, revisions: [], deadlineHistory: [], deadlineChangeCount: 0 });
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('valid-shaped but unknown item id -> 404, clean empty body', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async (...args) => { throw new Error('unexpected upstream fetch: ' + args[0]); };
+    try {
+      const db = makeHistoryFakeD1([]);
+      const req = new Request('https://api.aboutcloud.io/entra-tracker/history/abcd1234', { headers: { Origin: 'https://tracker.aboutcloud.io' } });
+      const res = await workerDefault.fetch(req, { TRACKER_DB: db });
+      assert.equal(res.status, 404);
+      const body = await res.json();
+      assert.equal(body.found, false);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('D1 unavailable -> 503, clean body, never a 500 that reads as "the tracker is broken"', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async (...args) => { throw new Error('unexpected upstream fetch: ' + args[0]); };
+    try {
+      const req = new Request('https://api.aboutcloud.io/entra-tracker/history/abcd1234', { headers: { Origin: 'https://tracker.aboutcloud.io' } });
+      const res = await workerDefault.fetch(req, { TRACKER_DB: makeThrowingHistoryD1() });
+      assert.equal(res.status, 503);
+      const body = await res.json();
+      assert.equal(body.found, false);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('a real multi-revision item returns 200 with full history, and the route never calls fetch() upstream', async () => {
+    const originalFetch = global.fetch;
+    let fetchCalls = 0;
+    global.fetch = async (...args) => { fetchCalls++; throw new Error('unexpected upstream fetch: ' + args[0]); };
+    try {
+      const db = makeHistoryFakeD1([
+        { id: 1, item_id: 'abcd1234', observed_at: '2026-06-01T00:00:00.000Z', title: 'T', category: 'preview', status: 'green', deadline: null, deadline_confidence: null, announced_date: '2026-06-01', service_category: 'Conditional Access', changed_fields: '[]' },
+        { id: 2, item_id: 'abcd1234', observed_at: '2026-07-01T00:00:00.000Z', title: 'T', category: 'breaking', status: 'yellow', deadline: '2026-10-01', deadline_confidence: 'stated', announced_date: '2026-06-01', service_category: 'Conditional Access', changed_fields: '["category","status","deadline","deadlineConfidence"]' },
+      ]);
+      const req = new Request('https://api.aboutcloud.io/entra-tracker/history/abcd1234', { headers: { Origin: 'https://tracker.aboutcloud.io' } });
+      const res = await workerDefault.fetch(req, { TRACKER_DB: db });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.found, true);
+      assert.equal(body.revisions.length, 2);
+      assert.equal(body.deadlineChangeCount, 1);
+      assert.equal(fetchCalls, 0, 'the /history route must never call fetch()');
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });
