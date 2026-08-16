@@ -814,6 +814,25 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
 
 .footer-text a { color: var(--accent); text-decoration: none; }
 .footer-text a:hover { text-decoration: underline; }
+.source-health-item.degraded { color: var(--yel); }
+
+/* Degraded-mode banner -- plain and non-alarming (admin tool, not a red alert):
+   "source X hasn't updated since T", not a siren. */
+.degraded-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--yel-bg);
+  border: 1px solid var(--yel-bdr);
+  color: var(--yel);
+  border-radius: var(--r);
+  padding: 0.7rem 1rem;
+  margin-bottom: 1rem;
+  font-family: var(--fm);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.degraded-banner-icon { flex-shrink: 0; }
 
 /* ── Responsive ── */
 @media (max-width: 1200px) {
@@ -1134,6 +1153,12 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Degraded-mode banner -->
+  <div class="degraded-banner" id="degradedBanner" style="display:none">
+    <span class="degraded-banner-icon">&#9888;&#65039;</span>
+    <span id="degradedBannerText"></span>
   </div>
 
   <!-- Stats -->
@@ -1465,6 +1490,7 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
       ·
       <a href="https://api.aboutcloud.io/entra-tracker?format=rss" target="_blank">RSS Feed</a>
     </div>
+    <div class="footer-text" id="sourceHealthFooter"></div>
   </div>
 
 </div>
@@ -1669,6 +1695,18 @@ function fmtAnnounced(iso) {
     const d = new Date(iso + 'T00:00:00Z');
     return d.toLocaleDateString('en-GB', { month:'short', year:'numeric', timeZone:'UTC' });
   } catch(e) { return iso; }
+}
+
+// Day+time precision, unlike fmtAnnounced's month-only -- for "last success"
+// timestamps (Phase 4 health footer) an admin needs to tell "today" from
+// "3 days ago" at a glance, not just "this month".
+function fmtHealthTimestamp(isoDateTime) {
+  try {
+    const d = new Date(isoDateTime);
+    const datePart = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+    const timePart = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' });
+    return `${datePart} ${timePart} UTC`;
+  } catch (e) { return isoDateTime; }
 }
 
 function cdHTML(item){
@@ -2021,6 +2059,50 @@ async function loadTaxonomy() {
 }
 loadTaxonomy();
 
+// Degraded-mode banner (Phase 4) -- driven by the main feed response's own
+// `degraded` field, no extra request needed for this part.
+const SOURCE_DISPLAY_NAMES = {
+  'entra-whatsnew-md':   "Entra What's New",
+  'fslogix-docs':        'FSLogix Docs',
+  'external-id-docs':    'External ID Docs',
+  'b2c-docs':            'B2C Docs',
+  'external-id-commits': 'External ID Commits',
+  'graph-changelog':     'Graph Changelog',
+};
+function sourceDisplayName(id) { return SOURCE_DISPLAY_NAMES[id] || id; }
+
+function renderDegradedBanner(degraded) {
+  const el = document.getElementById('degradedBanner');
+  const textEl = document.getElementById('degradedBannerText');
+  if (!el || !textEl) return;
+  if (!degraded || !degraded.length) { el.style.display = 'none'; return; }
+  const names = degraded.map(sourceDisplayName).join(', ');
+  const plural = degraded.length > 1;
+  textEl.textContent = `${names} ${plural ? "haven't" : "hasn't"} updated normally this cycle -- showing the last known data for ${plural ? 'them' : 'it'} instead of a possibly-incomplete refresh.`;
+  el.style.display = 'flex';
+}
+
+// Per-source last-success timestamps in the footer (Phase 4) -- reads
+// GET /health once on load. Non-fatal: the footer line just stays empty if
+// this fails, the rest of the page is unaffected.
+async function loadHealth() {
+  try {
+    const res = await fetch(API + '/health', { mode: 'cors', credentials: 'omit' });
+    if (!res.ok) return;
+    const health = await res.json();
+    const footerEl = document.getElementById('sourceHealthFooter');
+    if (!footerEl || !health.sources) return;
+    const parts = Object.entries(health.sources).map(([source, s]) => {
+      const label = sourceDisplayName(source);
+      const when = s.lastSuccessAt ? fmtHealthTimestamp(s.lastSuccessAt) : 'never';
+      const cls = s.degraded ? ' degraded' : '';
+      return `<span class="source-health-item${cls}">${esc(label)}: ${esc(when)}</span>`;
+    });
+    if (parts.length) footerEl.innerHTML = 'Source status: ' + parts.join(' · ');
+  } catch (e) { /* non-fatal -- footer line just stays empty */ }
+}
+loadHealth();
+
 // Subscribe / Export popover — attach listeners
 function initSubscribe() {
   const subBtn = document.getElementById('subBtn');
@@ -2105,6 +2187,7 @@ async function load(){
     const data = await res.json();
     all = data.items || [];
     coldStart = !!data.coldStart;
+    renderDegradedBanner(data.degraded);
 
     const d = new Date(data.lastUpdated);
     document.getElementById('upd').textContent = 'Updated ' + d.toLocaleString('en-GB', {

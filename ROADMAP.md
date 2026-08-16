@@ -96,7 +96,36 @@
   fixed a real edge case live: the initial latest-revision query tiebroke on
   `observed_at`, which isn't guaranteed unique (a dropped-connection retry
   during testing produced two rows sharing a timestamp) -- switched to the
-  autoincrement `id` column, which is.
+  autoincrement `id` column, which is. **Confirmed the deployed write path
+  landed cleanly on its first real production build** (Phase 4 development):
+  103 distinct items, 103 rows, closing that open item from the Phase 3 PR.
+- [x] Degraded mode + `GET /health` (Phase 4) -- "never lie quietly": if a source
+  silently returns far fewer items than usual (parser broke, HTML restructured),
+  the previous good snapshot's items for that source are retained (flagged
+  `stale: true`) instead of publishing a shrunken feed, and the source is
+  named in a new envelope array `degraded: []`. Detection compares each
+  source's raw parse count against a trailing median of its last 7 successful
+  builds (stored in KV, deliberately not D1 -- D1 is allowed to fail
+  non-fatally, health monitoring shouldn't be tied to the one store designed
+  to be ignorable); a drop below 50% of the median trips it, except for
+  small-N sources (median <=5 -- `fslogix-docs`/`external-id-docs`/
+  `graph-changelog` normally run this low, `b2c-docs` legitimately sits near
+  zero) which are exempt from the ratio test entirely so ordinary noise never
+  false-trips it. A degraded build does not update its own trailing baseline.
+  New `GET /health` endpoint: no auth, a single cheap KV read, never fetches
+  a source or triggers a rebuild -- proved with a test that calls the real
+  route with `fetch()` set to throw on any call. Frontend: a plain
+  (non-alarming, yellow not red) banner naming the affected source(s), and
+  per-source last-success timestamps in the footer. Optional
+  `DEGRADED_WEBHOOK_URL` env var (Antonio sets it, absent = off) fires once
+  per source on the transition *into* degraded, not every build while still
+  degraded. Rollout behaviour stated explicitly: a source's first-ever build
+  (empty trailing history) is never flagged degraded -- there's nothing to
+  compare against yet -- and the window fills over ~7 successful builds
+  (~28h at the 4h cron cadence). 83 tests total (64 pre-existing unaffected,
+  19 new), including a dedicated test proving the full API envelope is
+  byte-for-byte unchanged (only the additive `degraded`/`stale` fields added)
+  whether the health-state KV read succeeds, fails, or the key doesn't exist yet.
 
 ## Planned
 
