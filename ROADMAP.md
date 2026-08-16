@@ -188,6 +188,77 @@
   what "likely related" means, and that Microsoft's own channels can
   genuinely disagree on a date. 108 tests total (83 pre-existing
   unaffected, 25 new).
+- [x] Frontend redesign + `.ics` calendar feed -- net-new product work
+  after the reliability arc (PRs #21-27) closed. Two deliverables, one PR:
+  a full visual/interaction redesign of `web/index.html`, and a new
+  `GET /entra-tracker?format=ics` export. No pipeline change -- confirmed
+  JSON/CSV/RSS output unaffected by dedicated tests.
+  **Motion**: deleted every infinite-loop glow/pulse animation (a
+  breathing hero title/subtitle, a pulsing "live" dot, a glowing subscribe
+  button, six looping stat-number glows) -- for a trustworthy-signal tool,
+  forever-looping decoration reads as "this page is alive," not "something
+  changed." What's left: the loading spinner, sub-200ms hover/focus/press
+  transitions, and a single one-shot card entrance animation that plays
+  once per re-render. `prefers-reduced-motion: reduce` neutralises all of
+  it.
+  **Unified filter bar**: replaced three disconnected filter mechanisms
+  (a 12-checkbox environment panel, a status-button-row + two `<select>`s,
+  and free-text search) with one model -- multi-select toggle-chips
+  (`aria-pressed`, real `<button>`s) for urgency, change type, and service
+  area (sourced live from `GET /taxonomy`), all freely combinable, plus
+  External ID / On Radar / My-environment as special toggle chips, all in
+  the same visual vocabulary. Every active filter renders as a removable
+  pill in an active-filters strip with one "Clear all" -- no hidden state.
+  Deep-link copy-link now encodes the full chip state (comma-separated
+  per axis) instead of a single filter+status pair.
+  **Card redesign**: each card is now a native `<details>` -- a compact,
+  scannable summary (title, urgency strip, key badges, evidence tier,
+  countdown, roadmap announcements -- the latter always visible, a trust
+  signal not a "read more" detail) with an expandable region holding the
+  full description, evidence quote + source, service-area/source
+  metadata, and a link into `/methodology`. New "Revised" badge wired to
+  the one real signal already available (`titleHistory[]`, Phase 1) and
+  positioned as the slot a future deadline-slip signal (D1 revision store,
+  a separate later work order) will extend without another redesign.
+  **Design tokens**: consolidated near-duplicate CSS custom properties
+  that meant the same neutral role under different names (`--surf`/
+  `--surface2`, `--bdr`/`--border`, `--text2`/`--muted`, `--dim`) into one
+  name per role; the semantic red/yellow/green/purple palette was already
+  clean and untouched.
+  **Accessibility**: explicit `:focus-visible` rings on every interactive
+  element (the search input previously suppressed the browser default
+  with no replacement -- a real gap, now fixed); filter chips are real
+  `<button>`s with `aria-pressed` so assistive tech announces them
+  correctly as toggles.
+  **"My environment" panel**: the old "Tenant Profile" reframed (not
+  deleted) -- copy now states plainly it's a rough, self-declared,
+  keyword-based approximation, explicitly staged as the entry point for a
+  future real client-side tenant overlay (delegated Microsoft Graph
+  access, out of scope here). Its match result now folds into the same
+  active-filters pill strip as everything else.
+  **`.ics` feed**: `GET /entra-tracker?format=ics`, hand-built (no
+  library), one all-day `VEVENT` per item with a real `deadline`
+  (unfiltered by status, matching CSV's behaviour), `inferred`-confidence
+  deadlines included with a leading `~` tentative marker rather than
+  excluded outright, RFC 5545-compliant (CRLF, `,`/`;`/`\`/newline
+  escaping, 75-octet code-point-safe line folding), one `VALARM` per
+  event (3 days before), non-fatal per event (one malformed item is
+  skipped, logged, and never corrupts the rest of the calendar). Verified
+  two ways: unit tests, and round-tripping the real output of a live
+  production fetch through an independent RFC 5545 parser (`node-ical`) --
+  5 real dated items parsed back out correctly, including the tentative
+  marker on the one real `inferred`-confidence item. Appears as a new row
+  in the Subscribe/Export popover.
+  Verified live via headless Playwright against mocked API/taxonomy/health
+  responses: full-page and mobile (375px, no horizontal overflow)
+  screenshots, the "urgent + Conditional Access = two clicks, two pills"
+  flow, card expand/collapse (and that starring an item doesn't also
+  toggle the card open), keyboard focus rings, reduced-motion rendering,
+  and the Subscribe popover's new `.ics` row -- zero console errors in
+  every scenario. 19 new Worker-side tests for the `.ics` builder
+  (escaping, folding, tentative marker, non-fatal skip, namespace
+  filtering) plus a dedicated no-pipeline-diff suite exercising `toCSV`/
+  `toRSS` directly; 127 tests total (108 pre-existing unaffected).
 
 ## Planned
 
