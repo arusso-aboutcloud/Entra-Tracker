@@ -1653,6 +1653,181 @@ async function writeRevisions(env, items, observedAtISO) {
   }
 }
 
+// ── HEALTH / DEGRADED MODE (Phase 4) ─────────────────────────────────────────
+// Stored in KV (its own key, NOT inside the main cache blob or the public
+// API response), not D1 -- deliberately. D1 (Phase 3) is explicitly allowed
+// to fail non-fatally; tying health MONITORING to the one store that's
+// designed to be ignorable would mean health could go dark exactly when
+// something is already under stress. KV is the same store the primary feed
+// already depends on, so this adds no entanglement beyond what already
+// exists, and keeps GET /health a single cheap read with no D1 involved.
+const HEALTH_KEY = 'entra_tracker_health_v1';
+const HEALTH_HISTORY_WINDOW = 7;   // trailing successful-build count per source
+const DEGRADED_RATIO = 0.5;        // below this fraction of the trailing median -> degraded
+// Sources whose trailing median is at or below this are exempt from the
+// ratio test entirely (including a drop to zero) -- b2c-docs legitimately
+// sits at 0 items for long stretches (B2C is end-of-sale), and fslogix-docs/
+// external-id-docs/graph-changelog normally run in the low single digits,
+// where "half of 2 is 1" is normal noise, not a parser failure signal.
+const SMALL_SOURCE_FLOOR = 5;
+
+function median(nums) {
+  if (!nums.length) return null;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// Decides one source's degraded status for this build. `history` is the
+// trailing window of past SUCCESSFUL builds' counts (oldest..newest), never
+// including a degraded build's own count (see applyDegradedGate).
+//
+// No baseline yet (empty history) -> never degraded. There's nothing to
+// compare against on rollout or a source's first-ever build; the window
+// fills up over the following HEALTH_HISTORY_WINDOW successful builds
+// (~28h at the 4h cron cadence) before the gate has real teeth. Stated here
+// per the work order's explicit ask for how this behaves pre-fill.
+function evaluateSourceHealth(currentCount, history) {
+  const trailingMedian = history.length ? median(history) : null;
+  if (trailingMedian === null) {
+    return { degraded: false, trailingMedian: null, ratio: null };
+  }
+  if (trailingMedian <= SMALL_SOURCE_FLOOR) {
+    return { degraded: false, trailingMedian, ratio: trailingMedian > 0 ? currentCount / trailingMedian : null };
+  }
+  const ratio = currentCount / trailingMedian;
+  return { degraded: ratio < DEGRADED_RATIO, trailingMedian, ratio };
+}
+
+// Shapes the stored health-state blob into the public GET /health response.
+// Pure function, no I/O -- the handler does the (single, cheap) KV read.
+function buildHealthResponse(healthState) {
+  const sources = {};
+  for (const [source, s] of Object.entries((healthState && healthState.sources) || {})) {
+    sources[source] = {
+      lastSuccessAt:  s.lastSuccessAt ?? null,
+      lastCount:      s.lastCount ?? null,
+      trailingMedian: s.trailingMedian ?? null,
+      ratio:          s.ratio ?? null,
+      degraded:       !!s.degraded,
+    };
+  }
+  const degraded = (healthState && healthState.degraded) || [];
+  return {
+    status:      degraded.length ? 'degraded' : 'ok',
+    degraded,
+    lastUpdated: (healthState && healthState.lastUpdated) || null,
+    sources,
+  };
+}
+
+// Reads stored per-source health state (non-fatal: a read failure just
+// turns degraded detection off for this build, never breaks the feed),
+// evaluates each source's current raw parse count against its trailing
+// history, and for any degraded source REPLACES this build's items for
+// that source with the previous good snapshot's items (from `prevItems`),
+// flagged `stale: true`. Healthy sources' items pass through with
+// `stale: false` and their count joins the trailing history; a degraded
+// source's count does NOT join its history (a degraded build must not
+// poison its own baseline, or the source could never recover its threshold).
+//
+// Returns the adjusted item list (replaces `allItems` entirely -- every
+// source's contribution, fresh or carried, is already included) plus the
+// list of degraded sources and the health snapshot to persist.
+async function applyDegradedGate(env, allItems, rawCounts, prevItems, nowISO) {
+  let healthState = { sources: {} };
+  try {
+    if (env && env.ENTRA_CACHE) {
+      const stored = await env.ENTRA_CACHE.get(HEALTH_KEY, 'text');
+      if (stored) healthState = JSON.parse(stored) || { sources: {} };
+    }
+  } catch (e) {
+    console.error('health-state read (non-fatal):', e && e.message);
+    healthState = { sources: {} };
+  }
+
+  const prevBySource = new Map();
+  for (const p of (prevItems || [])) {
+    const bucket = prevBySource.get(p.source);
+    if (bucket) bucket.push(p); else prevBySource.set(p.source, [p]);
+  }
+  const itemsBySource = new Map();
+  for (const item of allItems) {
+    const bucket = itemsBySource.get(item.source);
+    if (bucket) bucket.push(item); else itemsBySource.set(item.source, [item]);
+  }
+
+  const degradedSources = [];
+  const nextHealthSources = {};
+  const resultItems = [];
+
+  for (const source of Object.keys(rawCounts)) {
+    const currentCount = rawCounts[source];
+    const prevSourceState = (healthState.sources && healthState.sources[source]) || {};
+    const history = Array.isArray(prevSourceState.history) ? prevSourceState.history : [];
+    const { degraded, trailingMedian, ratio } = evaluateSourceHealth(currentCount, history);
+
+    if (degraded) {
+      degradedSources.push(source);
+      const carried = (prevBySource.get(source) || []).map(it => ({ ...it, stale: true }));
+      resultItems.push(...carried);
+      nextHealthSources[source] = {
+        lastSuccessAt: prevSourceState.lastSuccessAt ?? null, // unchanged -- this build wasn't a success
+        lastCount: currentCount,
+        history, // unchanged -- do not poison the baseline with a degraded count
+        trailingMedian,
+        ratio,
+        degraded: true,
+      };
+    } else {
+      const fresh = (itemsBySource.get(source) || []).map(it => ({ ...it, stale: false }));
+      resultItems.push(...fresh);
+      const newHistory = [...history, currentCount].slice(-HEALTH_HISTORY_WINDOW);
+      nextHealthSources[source] = {
+        lastSuccessAt: nowISO,
+        lastCount: currentCount,
+        history: newHistory,
+        trailingMedian: median(newHistory),
+        ratio,
+        degraded: false,
+      };
+    }
+  }
+
+  const nextHealthState = { lastUpdated: nowISO, sources: nextHealthSources, degraded: degradedSources };
+  try {
+    if (env && env.ENTRA_CACHE) {
+      await env.ENTRA_CACHE.put(HEALTH_KEY, JSON.stringify(nextHealthState), { expirationTtl: KV_RETENTION_SECONDS });
+    }
+  } catch (e) {
+    console.error('health-state write (non-fatal):', e && e.message);
+  }
+
+  // Fire-and-forget, non-fatal, transition-only webhook (4e). Only if
+  // env.DEGRADED_WEBHOOK_URL is set (absent -> silently off, same pattern
+  // as REFRESH_TOKEN). Fires once per source per transition INTO degraded,
+  // not on every build while still degraded.
+  if (env && env.DEGRADED_WEBHOOK_URL) {
+    for (const source of degradedSources) {
+      const wasDegraded = !!(healthState.sources && healthState.sources[source] && healthState.sources[source].degraded);
+      if (wasDegraded) continue; // already degraded last build -- not a new transition
+      try {
+        await fetch(env.DEGRADED_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source, transitionedAt: nowISO,
+            currentCount: rawCounts[source],
+            trailingMedian: nextHealthSources[source].trailingMedian,
+          }),
+        });
+      } catch (e) { console.error('degraded webhook (non-fatal):', e && e.message); }
+    }
+  }
+
+  return { items: resultItems, degraded: degradedSources };
+}
+
 // ── BUILD FULL DATASET ─────────────────────────────────────────────────────
 async function buildTrackerData(prevItems, env) {
   let allItems = [];
@@ -1738,6 +1913,23 @@ async function buildTrackerData(prevItems, env) {
   // been restored, so it can be promoted to a real source. Surfaces via warnings[].
   await probeCandidateFeeds(warnings);
 
+  // Degraded gate (Phase 4): compare each source's RAW parse count (before
+  // taxonomy/dedupe touch anything) against its trailing baseline. A source
+  // that silently shrank has its items REPLACED with the previous good
+  // snapshot's items for that source (flagged stale), rather than
+  // publishing the shrunken set -- see applyDegradedGate()'s own comment.
+  const rawSourceCounts = {
+    'entra-whatsnew-md':   countWN,
+    'fslogix-docs':        countFS,
+    'external-id-docs':    countEI,
+    'b2c-docs':            countB2C,
+    'external-id-commits': countEIC,
+    'graph-changelog':     countGC,
+  };
+  const buildTimestamp = new Date().toISOString();
+  const { items: gatedItems, degraded } = await applyDegradedGate(env, allItems, rawSourceCounts, prevItems, buildTimestamp);
+  allItems = gatedItems;
+
   // Route every item through the service taxonomy exactly once, before
   // sort/dedupe/retention touch anything. Drops items matching no taxonomy
   // entry -- never silently, see routeThroughTaxonomy()'s unmatched/
@@ -1805,7 +1997,7 @@ async function buildTrackerData(prevItems, env) {
 
   const externalIdCount = diffed.filter(i => i.namespace === 'external-id').length;
 
-  const lastUpdated = new Date().toISOString();
+  const lastUpdated = buildTimestamp;
 
   // Revision store write (Phase 3, side-band, non-fatal -- see
   // writeRevisions()'s own comment). Item set is fully finalised here:
@@ -1824,6 +2016,7 @@ async function buildTrackerData(prevItems, env) {
     crossSourceMerged,
     unmatched,
     unmatchedSamples,
+    degraded,
     sources: {
       'whats-new-md':        countWN,
       'fslogix-docs':        countFS,
@@ -1875,6 +2068,27 @@ export default {
     if (url.pathname === '/entra-tracker/taxonomy') {
       const taxonomy = SERVICE_TAXONOMY.map(e => ({ id: e.id, name: e.name }));
       return new Response(JSON.stringify({ taxonomy }, null, 2), {
+        headers: {
+          'Content-Type':  'application/json',
+          'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
+          ...corsHeaders(origin),
+        },
+      });
+    }
+
+    // Read-only, cheap, no auth (rule 6): a single KV read of the stored
+    // health snapshot, nothing more. Never fetches a source, never triggers
+    // a rebuild, never queries D1. Safe to poll in a loop.
+    if (url.pathname === '/entra-tracker/health') {
+      let healthState = null;
+      try {
+        if (env.ENTRA_CACHE) {
+          const stored = await env.ENTRA_CACHE.get(HEALTH_KEY, 'text');
+          if (stored) healthState = JSON.parse(stored);
+        }
+      } catch (e) { console.error('health read:', e.message); }
+
+      return new Response(JSON.stringify(buildHealthResponse(healthState), null, 2), {
         headers: {
           'Content-Type':  'application/json',
           'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
@@ -2051,4 +2265,9 @@ export {
   revisionContentHash,
   writeRevisions,
   buildTrackerData,
+  HEALTH_KEY,
+  median,
+  evaluateSourceHealth,
+  buildHealthResponse,
+  applyDegradedGate,
 };

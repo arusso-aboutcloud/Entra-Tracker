@@ -82,6 +82,8 @@ GitHub Settings > Secrets and variables > Actions:
 `wrangler secret put REFRESH_TOKEN --config api/wrangler.toml` or the Cloudflare
 dashboard. Gates the `?refresh=1` bypass; without it, `refresh=1` is ignored.
 
+**Env var:** `DEGRADED_WEBHOOK_URL` (optional, Phase 4) — if set, a small JSON payload (`{source, transitionedAt, currentCount, trailingMedian}`) is POSTed once per source on the **transition into** degraded state (not on every build while still degraded). Absent → the feature is silently off, same pattern as `REFRESH_TOKEN`. Non-fatal: a failed POST is logged and otherwise ignored.
+
 **Deploy runbook — do this after any deploy that touches cache-write timing
 or identity/dedup logic (worth doing after any deploy, cheap either way):**
 once `REFRESH_TOKEN` is set, call `?refresh=1` with the correct
@@ -106,6 +108,8 @@ new logic took over.
 ### KV: `ENTRA_CACHE`
 
 **Key:** `entra_tracker_v3` — single-key storage containing all parsed articles and metadata.
+
+**Key:** `entra_tracker_health_v1` (Phase 4) — separate key, same namespace. Per-source item-count history (trailing window, up to 7 successful builds) and current degraded state. Deliberately **not** stored in D1: D1 (Phase 3) is explicitly allowed to fail non-fatally, and tying health *monitoring* to the one store that's designed to be ignorable would mean health could go dark exactly when something is already under stress. KV is the same store the primary feed already depends on, so this adds no new entanglement. Read by `GET /health` (a single cheap read, never a live rebuild) and written once per build by `applyDegradedGate()`.
 
 ### D1: `entra-tracker-history` (binding `TRACKER_DB`)
 
@@ -135,6 +139,29 @@ Returns full article catalog with metadata.
 
 ### `GET /taxonomy`
 Returns the single service taxonomy definition (`{ taxonomy: [{ id, name }, ...] }`) that every item's `serviceCategory` is classified against, and that the frontend's service-area dropdown and `/methodology` coverage statement both read from. No auth, cache-only (static in-memory structure — never touches KV or triggers an upstream fetch), always available regardless of cache state.
+
+### `GET /health` (Phase 4)
+Machine-readable per-source health, meant to be polled by an external monitor. No auth, strictly read-only and cheap: a single KV read of a stored snapshot. **Never** triggers a source fetch, a rebuild, or a D1 query — hitting it in a loop costs nothing upstream and never touches the main endpoint's cost path.
+
+```json
+{
+  "status": "ok" | "degraded",
+  "degraded": ["<source>", ...],
+  "lastUpdated": "<ISO, when the underlying snapshot was last written>",
+  "sources": {
+    "<source>": {
+      "lastSuccessAt": "<ISO or null>",
+      "lastCount": 91,
+      "trailingMedian": 90,
+      "ratio": 1.01,
+      "degraded": false
+    },
+    ...
+  }
+}
+```
+
+`ratio` and `trailingMedian` are `null` until a source has at least one successful build recorded (see "Degraded mode" below for how the trailing window fills). Source ids match `item.source` (`entra-whatsnew-md`, `fslogix-docs`, `external-id-docs`, `b2c-docs`, `external-id-commits`, `graph-changelog`) — note the main envelope's `sources` object uses slightly different key spellings (a pre-existing inconsistency, not touched here); `/health`'s keys are the canonical `item.source` values.
 
 **Query parameters:**
 
@@ -168,6 +195,20 @@ Returns the single service taxonomy definition (`{ taxonomy: [{ id, name }, ...]
 **Cold-start `firstSeen` repair:** on a cold start (no usable prior snapshot — see Cache behavior above), each item's `firstSeen` is seeded from its `announcedDate` when that's in the past, rather than flattened to the day of the cold start for every item at once (the failure mode documented in PR #22, 2026-08-14). Items without a usable `announcedDate` still fall back to the cold-start date. The RSS feed also now falls back to `announcedDate` as a secondary sort key when `firstSeen` values tie, so a future cold start degrades to an estimated-but-ordered feed instead of collapsing to arrival order.
 
 **Threshold note:** the cross-source merge similarity threshold (0.82, Phase 0.1) has only ever fired on hand-built fixtures — `crossSourceMerged` has been 0 against live data every time it's been checked so far. The first time it fires for real, the merge should be spot-checked before being trusted; don't tune the threshold without that evidence.
+
+## Degraded mode (Phase 4)
+
+The failure mode this closes: a source's HTML restructures, the parser returns 200 with 3 items instead of 90, and every missing item silently vanishes from the feed with no signal. "Never lie quietly" is the whole point.
+
+**How it's detected:** each source's raw parse count (before taxonomy/dedupe touch anything) is compared against a trailing median of its last 7 successful builds. A source returning **fewer than 50% of its trailing median** — including a drop to zero — is treated as degraded for that build. Sources whose trailing median is small (≤5 items — `fslogix-docs`, `external-id-docs`, `graph-changelog` normally run this low, and `b2c-docs` legitimately sits at or near zero for long stretches since B2C is end-of-sale) are **exempt from the ratio test entirely**, so ordinary small-number noise never trips it.
+
+**What happens when a source is degraded:** that source's items for this build are **replaced with the previous good snapshot's items for that source**, each flagged additive `stale: true`, and the source name is added to the additive envelope array `degraded: []`. The source's trailing baseline is **not** updated on a degraded build — otherwise a shrunken count would poison the median and the source could never recover its own threshold.
+
+**Rollout / first population:** on a source's first-ever build (or right after this phase first deploys), there's no trailing history to compare against — the gate **never** flags a source degraded when its history is empty, it just starts recording. The window fills over the following ~7 successful builds (roughly 28 hours at the 4-hour cron cadence) before the gate has real teeth.
+
+**Non-fatal:** if the stored count-history KV key is unreadable, degraded detection simply turns off for that build (every source treated as healthy) — the feed still builds and publishes normally. Proved with a dedicated test.
+
+**API additions (additive only):** `degraded: []` on the envelope, `stale: true|false` on every item. Existing fields are unaffected — confirmed with a test that diffs the full envelope with and without a working health-state store.
 
 **Service taxonomy (`serviceCategory`, `serviceCategories[]`, `unmatched`, `unmatchedSamples`):** every item is now classified against a single, fixed taxonomy (`GET /taxonomy`) instead of each mechanism (External ID detection, the Graph changelog relevance filter, per-parser assumptions) carrying its own scoping logic. `serviceCategory` is **overwritten** with the taxonomy's canonical name for the item's primary match — this normalises Microsoft's raw, inconsistent category strings (`whats-new.md` alone used 30+ of them) into one fixed vocabulary; the field's type/format is unchanged (still a string), only its value changed for most items. The additive `serviceCategories: []` records every taxonomy entry the item matches, not just the primary. An item matching **no** taxonomy entry is dropped, never silently: the envelope's `unmatched: { <source>: N }` counts drops per source, and `unmatchedSamples: []` (capped at 10 total) keeps `{title, source}` so the taxonomy can be extended from evidence. Classification is two-tier: Microsoft's own raw `**Service category:**` field (whats-new.md only) decides the primary when present (authoritative); title/description text only decides it when there's no raw category to go on. See `api/__fixtures__/taxonomy/README.md` for the full raw→canonical mapping and three real classification bugs found and fixed while building this (short version: plain substring matching is dangerous — `signin` matched inside `assigning`, `provisioning` matched inside `cloudPcProvisioningPolicy`).
 
@@ -228,6 +269,8 @@ Every item also carries a Tier A/B/C badge recording how strong Microsoft's own 
 - 🅰️ Evidence tier badge (Tier A/B/C) on every card — how strong Microsoft's own signal was; see the `/methodology` section for what each tier means
 - ⏳ Deadline confidence hedge — cards with an `'inferred'`-confidence deadline show the date plainly ("possible date … unconfirmed") instead of a countdown, since a countdown implies more certainty than the source text actually supports
 - 📊 Methodology section — collapsible, plain-language explanation of evidence tiers and deadline confidence, written for an Entra admin rather than a developer; now also includes a coverage statement listing every service area the tracker covers, sourced from the same taxonomy as the filter dropdown
+- ⚠️ Degraded-mode banner — appears only when a source hasn't updated normally, names it plainly ("hasn't updated normally this cycle"), no red-alert styling; disappears automatically once the source recovers
+- 🕓 Per-source status footer — last successful update time for every source, sourced from `GET /health`; a degraded source's stale timestamp is visually distinguished from the others
 
 ---
 

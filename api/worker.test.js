@@ -28,7 +28,13 @@ import {
   revisionContentHash,
   writeRevisions,
   buildTrackerData,
+  HEALTH_KEY,
+  median,
+  evaluateSourceHealth,
+  buildHealthResponse,
+  applyDegradedGate,
 } from './worker.js';
+import workerDefault from './worker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -665,33 +671,34 @@ describe('writeRevisions (non-fatal contract + change-only writes)', () => {
   });
 });
 
+// Shared by the Phase 3 and Phase 4 buildTrackerData integration tests below.
+const WHATS_NEW_FIXTURE = [
+  '## March 2026',
+  '',
+  '### Plan for change - Test Entry For Revision Store',
+  '',
+  '**Type:** Plan for change',
+  '**Service category:** Conditional Access',
+  '',
+  'This entry will be retired on May 1, 2026.',
+  '',
+  '---',
+  '',
+].join('\n');
+
+function mockFetchFor(url) {
+  const u = String(url);
+  const ok = (body) => Promise.resolve({ ok: true, text: async () => body });
+  if (u.includes('whats-new.md')) return ok(WHATS_NEW_FIXTURE);
+  if (u.includes('fslogix')) return ok('<html></html>');
+  if (u.includes('external-id/whats-new-docs.md')) return ok('');
+  if (u.includes('active-directory-b2c/whats-new-docs.md')) return ok('');
+  if (u.includes('commits?path=')) return ok('[]');
+  if (u.includes('graph/changelog')) return ok('<rss><channel></channel></rss>');
+  return Promise.resolve({ ok: false, status: 404, text: async () => '' });
+}
+
 describe('buildTrackerData: API envelope is byte-for-byte unchanged regardless of D1 presence/success/failure', () => {
-  const WHATS_NEW_FIXTURE = [
-    '## March 2026',
-    '',
-    '### Plan for change - Test Entry For Revision Store',
-    '',
-    '**Type:** Plan for change',
-    '**Service category:** Conditional Access',
-    '',
-    'This entry will be retired on May 1, 2026.',
-    '',
-    '---',
-    '',
-  ].join('\n');
-
-  function mockFetchFor(url) {
-    const u = String(url);
-    const ok = (body) => Promise.resolve({ ok: true, text: async () => body });
-    if (u.includes('whats-new.md')) return ok(WHATS_NEW_FIXTURE);
-    if (u.includes('fslogix')) return ok('<html></html>');
-    if (u.includes('external-id/whats-new-docs.md')) return ok('');
-    if (u.includes('active-directory-b2c/whats-new-docs.md')) return ok('');
-    if (u.includes('commits?path=')) return ok('[]');
-    if (u.includes('graph/changelog')) return ok('<rss><channel></channel></rss>');
-    return Promise.resolve({ ok: false, status: 404, text: async () => '' });
-  }
-
   test('identical envelope (aside from the live lastUpdated timestamp) with no D1, a working D1, and a failing D1', async (t) => {
     const originalFetch = global.fetch;
     t.after(() => { global.fetch = originalFetch; });
@@ -715,5 +722,239 @@ describe('buildTrackerData: API envelope is byte-for-byte unchanged regardless o
       assert.equal(JSON.stringify(data).toLowerCase().includes('d1'), false);
       assert.equal(JSON.stringify(data).toLowerCase().includes('tracker_db'), false);
     }
+  });
+});
+
+// ── HEALTH / DEGRADED MODE (Phase 4) ────────────────────────────────────────
+// Item-level fixtures throughout (not raw payload) -- degraded-gate logic
+// runs on already-parsed items and count arrays, not Microsoft's source
+// text, same justification as Phase 3's revision-store fixtures. Real
+// per-source counts observed from a live fetch during this phase's
+// development (for the "first population" report) are cited in the PR
+// description, not re-derived here.
+
+function makeFakeKV(initial) {
+  const store = new Map(Object.entries(initial || {}));
+  return {
+    _store: store,
+    async get(key) { return store.has(key) ? store.get(key) : null; },
+    async put(key, value) { store.set(key, value); },
+  };
+}
+
+function makeThrowingKV() {
+  return {
+    async get() { throw new Error('KV read failed (simulated)'); },
+    async put() { throw new Error('KV write failed (simulated)'); },
+  };
+}
+
+describe('median', () => {
+  test('odd length', () => assert.equal(median([1, 3, 2]), 2));
+  test('even length averages the two middle values', () => assert.equal(median([1, 2, 3, 4]), 2.5));
+  test('empty array is null', () => assert.equal(median([]), null));
+});
+
+describe('evaluateSourceHealth', () => {
+  test('no history yet -> never degraded, regardless of count (rollout / first-ever build for a source)', () => {
+    assert.deepEqual(evaluateSourceHealth(0, []), { degraded: false, trailingMedian: null, ratio: null });
+    assert.deepEqual(evaluateSourceHealth(91, []), { degraded: false, trailingMedian: null, ratio: null });
+  });
+
+  test('small-N source (trailing median <= floor) is exempt from the ratio test, including a drop to zero', () => {
+    // Mirrors the real b2c-docs pattern: legitimately near/at zero for long stretches (B2C is end-of-sale).
+    const r = evaluateSourceHealth(0, [2, 1, 2, 0, 1]); // median 1
+    assert.equal(r.degraded, false);
+  });
+
+  test('a real drop below 50% of a meaningfully-sized trailing median is degraded', () => {
+    const r = evaluateSourceHealth(3, [91, 88, 90, 92, 89, 91, 90]); // median 90
+    assert.equal(r.degraded, true);
+    assert.equal(r.trailingMedian, 90);
+  });
+
+  test('a source within normal variation (>=50% of median) is not degraded', () => {
+    const r = evaluateSourceHealth(50, [91, 88, 90, 92, 89, 91, 90]); // median 90, ratio ~0.56
+    assert.equal(r.degraded, false);
+  });
+});
+
+describe('applyDegradedGate', () => {
+  const PREV_WN  = [{ id: 'wn1', source: 'entra-whatsnew-md', title: 'Old WN item 1' }, { id: 'wn2', source: 'entra-whatsnew-md', title: 'Old WN item 2' }];
+  const FRESH_WN = [{ id: 'wn3', source: 'entra-whatsnew-md', title: 'New WN item' }];
+
+  function seededHealth(historyBySource) {
+    const sources = {};
+    for (const [source, history] of Object.entries(historyBySource)) {
+      sources[source] = { lastSuccessAt: '2026-08-01T00:00:00.000Z', lastCount: history[history.length - 1], history, trailingMedian: median(history), ratio: 1, degraded: false };
+    }
+    return JSON.stringify({ lastUpdated: '2026-08-01T00:00:00.000Z', sources, degraded: [] });
+  }
+
+  test('a source dropping below 50% of trailing median: previous items retained and flagged stale, source in degraded[], baseline NOT updated', async () => {
+    const kv = makeFakeKV({ [HEALTH_KEY]: seededHealth({ 'entra-whatsnew-md': [91, 88, 90, 92, 89, 91, 90] }) });
+    const { items, degraded } = await applyDegradedGate({ ENTRA_CACHE: kv }, FRESH_WN, { 'entra-whatsnew-md': 3 }, PREV_WN, '2026-08-16T00:00:00.000Z');
+
+    assert.deepEqual(degraded, ['entra-whatsnew-md']);
+    assert.equal(items.length, 2); // carried previous items, not the 1 fresh item
+    assert.ok(items.every(i => i.stale === true));
+    assert.deepEqual(items.map(i => i.id).sort(), ['wn1', 'wn2']);
+
+    const stored = JSON.parse(kv._store.get(HEALTH_KEY));
+    assert.deepEqual(stored.sources['entra-whatsnew-md'].history, [91, 88, 90, 92, 89, 91, 90]); // unchanged
+    assert.equal(stored.sources['entra-whatsnew-md'].degraded, true);
+  });
+
+  test('a healthy source: fresh items pass through flagged not-stale, and its count joins the trailing history', async () => {
+    const kv = makeFakeKV({ [HEALTH_KEY]: seededHealth({ 'entra-whatsnew-md': [88, 90, 89] }) });
+    const { items, degraded } = await applyDegradedGate({ ENTRA_CACHE: kv }, FRESH_WN, { 'entra-whatsnew-md': 91 }, PREV_WN, '2026-08-16T00:00:00.000Z');
+
+    assert.deepEqual(degraded, []);
+    assert.equal(items.length, 1);
+    assert.equal(items[0].stale, false);
+
+    const stored = JSON.parse(kv._store.get(HEALTH_KEY));
+    assert.deepEqual(stored.sources['entra-whatsnew-md'].history, [88, 90, 89, 91]);
+  });
+
+  test('small-N source within normal variation does not trip the gate', async () => {
+    const kv = makeFakeKV({ [HEALTH_KEY]: seededHealth({ 'b2c-docs': [1, 0, 2, 0, 1] }) }); // median 1
+    const { degraded } = await applyDegradedGate({ ENTRA_CACHE: kv }, [], { 'b2c-docs': 0 }, [], '2026-08-16T00:00:00.000Z');
+    assert.deepEqual(degraded, []);
+  });
+
+  test('a recovered source rejoins normal operation and resumes updating its baseline', async () => {
+    const kv = makeFakeKV({ [HEALTH_KEY]: seededHealth({ 'entra-whatsnew-md': [91, 88, 90, 92, 89, 91, 90] }) });
+
+    // Build 1: degraded -- baseline frozen.
+    await applyDegradedGate({ ENTRA_CACHE: kv }, FRESH_WN, { 'entra-whatsnew-md': 3 }, PREV_WN, '2026-08-16T00:00:00.000Z');
+    let stored = JSON.parse(kv._store.get(HEALTH_KEY));
+    assert.deepEqual(stored.sources['entra-whatsnew-md'].history, [91, 88, 90, 92, 89, 91, 90]);
+
+    // Build 2: recovers to a normal count -- compared against the still-frozen baseline, passes, and resumes updating it.
+    const { degraded } = await applyDegradedGate({ ENTRA_CACHE: kv }, FRESH_WN, { 'entra-whatsnew-md': 90 }, PREV_WN, '2026-08-16T04:00:00.000Z');
+    assert.deepEqual(degraded, []);
+    stored = JSON.parse(kv._store.get(HEALTH_KEY));
+    assert.deepEqual(stored.sources['entra-whatsnew-md'].history, [88, 90, 92, 89, 91, 90, 90]); // window slid, includes the recovery count
+  });
+
+  test('non-fatal: a KV that throws on every call never propagates, and detection degrades to off (never degraded) rather than breaking the build', async () => {
+    const kv = makeThrowingKV();
+    const rawCounts = { 'entra-whatsnew-md': 3 }; // would be a real drop if the baseline were readable
+    await assert.doesNotReject(applyDegradedGate({ ENTRA_CACHE: kv }, FRESH_WN, rawCounts, PREV_WN, '2026-08-16T00:00:00.000Z'));
+    const { items, degraded } = await applyDegradedGate({ ENTRA_CACHE: kv }, FRESH_WN, rawCounts, PREV_WN, '2026-08-16T00:00:00.000Z');
+    assert.deepEqual(degraded, []);
+    assert.deepEqual(items, FRESH_WN.map(i => ({ ...i, stale: false })));
+  });
+
+  test('degraded webhook fires once on transition into degraded, not again on a second consecutive degraded build', async () => {
+    const calls = [];
+    const originalFetch = global.fetch;
+    global.fetch = async (url, opts) => { calls.push({ url, body: JSON.parse(opts.body) }); return { ok: true }; };
+    try {
+      const kv = makeFakeKV({ [HEALTH_KEY]: seededHealth({ 'entra-whatsnew-md': [91, 88, 90, 92, 89, 91, 90] }) });
+      const env = { ENTRA_CACHE: kv, DEGRADED_WEBHOOK_URL: 'https://example.test/hook' };
+      await applyDegradedGate(env, FRESH_WN, { 'entra-whatsnew-md': 3 }, PREV_WN, '2026-08-16T00:00:00.000Z'); // build 1: transition
+      await applyDegradedGate(env, FRESH_WN, { 'entra-whatsnew-md': 3 }, PREV_WN, '2026-08-16T04:00:00.000Z'); // build 2: still degraded
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].body.source, 'entra-whatsnew-md');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('no DEGRADED_WEBHOOK_URL set -> feature silently off, fetch never attempted', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async () => { throw new Error('should not be called -- DEGRADED_WEBHOOK_URL is unset'); };
+    try {
+      const kv = makeFakeKV({ [HEALTH_KEY]: seededHealth({ 'entra-whatsnew-md': [91, 88, 90, 92, 89, 91, 90] }) });
+      await assert.doesNotReject(applyDegradedGate({ ENTRA_CACHE: kv }, FRESH_WN, { 'entra-whatsnew-md': 3 }, PREV_WN, '2026-08-16T00:00:00.000Z'));
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+});
+
+describe('buildHealthResponse', () => {
+  test('shapes stored state into the public response; status reflects degraded[]', () => {
+    const state = {
+      lastUpdated: '2026-08-16T00:00:00.000Z',
+      degraded: ['fslogix-docs'],
+      sources: { 'fslogix-docs': { lastSuccessAt: null, lastCount: 0, history: [2, 1], trailingMedian: 1, ratio: 0, degraded: true } },
+    };
+    const r = buildHealthResponse(state);
+    assert.equal(r.status, 'degraded');
+    assert.deepEqual(r.degraded, ['fslogix-docs']);
+    assert.equal(r.sources['fslogix-docs'].degraded, true);
+  });
+
+  test('null state (health snapshot never built yet) -> ok, empty', () => {
+    const r = buildHealthResponse(null);
+    assert.equal(r.status, 'ok');
+    assert.deepEqual(r.degraded, []);
+    assert.deepEqual(r.sources, {});
+  });
+});
+
+describe('GET /entra-tracker/health -- real route (workerDefault.fetch), proves no upstream fetch', () => {
+  test('returns the stored health state and makes zero fetch() calls', async () => {
+    const originalFetch = global.fetch;
+    let fetchCalls = 0;
+    global.fetch = async (...args) => { fetchCalls++; throw new Error('unexpected upstream fetch from /health: ' + args[0]); };
+    try {
+      const healthJson = JSON.stringify({
+        lastUpdated: '2026-08-16T00:00:00.000Z',
+        degraded: ['b2c-docs'],
+        sources: { 'b2c-docs': { lastSuccessAt: null, lastCount: 0, history: [], trailingMedian: null, ratio: null, degraded: true } },
+      });
+      const kv = makeFakeKV({ [HEALTH_KEY]: healthJson });
+      const req = new Request('https://api.aboutcloud.io/entra-tracker/health', { headers: { Origin: 'https://tracker.aboutcloud.io' } });
+      const res = await workerDefault.fetch(req, { ENTRA_CACHE: kv });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.status, 'degraded');
+      assert.deepEqual(body.degraded, ['b2c-docs']);
+      assert.equal(fetchCalls, 0, 'the /health route must never call fetch()');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('no stored health state yet -> "ok", empty, still zero fetches', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async (...args) => { throw new Error('unexpected upstream fetch: ' + args[0]); };
+    try {
+      const kv = makeFakeKV({});
+      const req = new Request('https://api.aboutcloud.io/entra-tracker/health', { headers: { Origin: 'https://tracker.aboutcloud.io' } });
+      const res = await workerDefault.fetch(req, { ENTRA_CACHE: kv });
+      const body = await res.json();
+      assert.equal(body.status, 'ok');
+      assert.deepEqual(body.degraded, []);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+});
+
+describe('buildTrackerData (Phase 4): degraded/stale are additive-only, non-fatal on a missing/absent health KV', () => {
+  test('no ENTRA_CACHE at all: degraded=[], every item gets stale:false, rest of the envelope matches a working-health-KV run', async (t) => {
+    const originalFetch = global.fetch;
+    t.after(() => { global.fetch = originalFetch; });
+    global.fetch = mockFetchFor;
+
+    const noKV = await buildTrackerData([], {});
+    assert.deepEqual(noKV.degraded, []);
+    assert.ok(noKV.items.every(i => i.stale === false));
+
+    const workingKV = makeFakeKV({});
+    const withKV = await buildTrackerData([], { ENTRA_CACHE: workingKV });
+    assert.deepEqual(withKV.degraded, []);
+    assert.ok(withKV.items.every(i => i.stale === false));
+
+    const strip = (data) => { const { lastUpdated, ...rest } = data; return rest; };
+    assert.deepEqual(strip(noKV), strip(withKV));
+
+    // Confirm the working-KV run actually persisted a health snapshot (not vacuous).
+    assert.ok(workingKV._store.has(HEALTH_KEY));
   });
 });
