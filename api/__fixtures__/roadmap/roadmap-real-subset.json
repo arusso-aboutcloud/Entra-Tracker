@@ -1,0 +1,893 @@
+[
+  {
+    "id": 568076,
+    "title": "Microsoft Entra: Windows Hello for Business and macOS Platform Single Sign-on can now be used as a second factor for MFA",
+    "description": "Windows Hello for Business (WHfB) and macOS Platform SSO (macOS PSSO) can now satisfy multifactor authentication as a standalone second factor. Previously, these methods only counted as MFA during primary sign-in, and users needed a separate passkey to complete step-up prompts, Authentication Strength policies, and sign-in frequency checks. With this change, WHfB and macOS PSSO work on their own for those scenarios, so more of your users can rely on strong, phishing-resistant sign-in without registering an extra method. What you need to know: Users who have only WHfB or macOS PSSO are now treated as MFA-capable and will no longer be automatically prompted to register another method. Because WHfB and macOS PSSO are tied to a specific device, we recommend having users register a portable method, such as a passkey or Microsoft Authenticator, during onboarding so they can complete MFA from any device.",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "October CY2026",
+    "publicPreviewDate": "",
+    "created": "2026-08-11T22:53:53",
+    "publicRoadmapStatus": "Include this month",
+    "status": "In development",
+    "modified": "2026-08-11T22:53:53",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "GCC"
+      },
+      {
+        "tagName": "Desktop"
+      },
+      {
+        "tagName": "Mac"
+      },
+      {
+        "tagName": "Microsoft Entra"
+      },
+      {
+        "tagName": "General Availability"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Entra"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        },
+        {
+          "tagName": "GCC"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Desktop"
+        },
+        {
+          "tagName": "Mac"
+        }
+      ]
+    }
+  },
+  {
+    "id": 566869,
+    "title": "Microsoft Entra: Upcoming changes to federatedTokenValidationPolicy default settings ",
+    "description": "The federatedTokenValidationPolicy is a resource type in Microsoft Graph (beta) that governs the validation of federated authentication tokens and allows customers to configure a rule to block logins where internalDomainFederation does not match UPN domain. The feature by default requires manual configuration in the tenant to prohibit cross-domain logins. To strengthen security with cross-domain sign-in we will change the default rule for federatedTokenValidationPolicy to block logins where internalDomainFederation does not match UPN domain. This internalDomainFederation object is typically created automatically during federation setup with AD federation server or other IdPs.",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "August CY2026",
+    "publicPreviewDate": "",
+    "created": "2026-07-01T23:03:18",
+    "publicRoadmapStatus": "Include this month",
+    "status": "In development",
+    "modified": "2026-07-01T23:03:18",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "GCC"
+      },
+      {
+        "tagName": "GCC High"
+      },
+      {
+        "tagName": "DoD"
+      },
+      {
+        "tagName": "Android"
+      },
+      {
+        "tagName": "Desktop"
+      },
+      {
+        "tagName": "iOS"
+      },
+      {
+        "tagName": "Mac"
+      },
+      {
+        "tagName": "Web"
+      },
+      {
+        "tagName": "Microsoft Entra"
+      },
+      {
+        "tagName": "General Availability"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Entra"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        },
+        {
+          "tagName": "GCC"
+        },
+        {
+          "tagName": "GCC High"
+        },
+        {
+          "tagName": "DoD"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Android"
+        },
+        {
+          "tagName": "Desktop"
+        },
+        {
+          "tagName": "iOS"
+        },
+        {
+          "tagName": "Mac"
+        },
+        {
+          "tagName": "Web"
+        }
+      ]
+    }
+  },
+  {
+    "id": 559476,
+    "title": "Microsoft Entra: Account Discovery for Application Access Governance.",
+    "description": "Account discovery provides visibility into who has access to connected applications by discovering local and orphaned accounts and identifying accounts that can be matched to Microsoft Entra ID users.\nAccount discovery will help administrators identify access that exists outside of Microsoft Entra ID Governance and bring that access under governance—simplifying application onboarding while improving visibility and control over application access.",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "June CY2026",
+    "publicPreviewDate": "April CY2026",
+    "created": "2026-04-21T16:15:19",
+    "publicRoadmapStatus": "Include this month",
+    "status": "Launched",
+    "modified": "2026-06-01T23:15:29",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "GCC"
+      },
+      {
+        "tagName": "Web"
+      },
+      {
+        "tagName": "Microsoft Entra"
+      },
+      {
+        "tagName": "General Availability"
+      },
+      {
+        "tagName": "Preview"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Entra"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        },
+        {
+          "tagName": "GCC"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        },
+        {
+          "tagName": "Preview"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Web"
+        }
+      ]
+    }
+  },
+  {
+    "id": 529856,
+    "title": "Microsoft Entra: ID Account Recovery",
+    "description": "Microsoft Entra ID Account Recovery is an advanced authentication recovery mechanism that enables users to regain access to their organizational accounts when they've lost access to all registered authentication methods. Unlike traditional password reset capabilities, account recovery focuses on identity verification and trust re-establishment prior to replacement of authentication methods rather than simple credential recovery.",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "May CY2026",
+    "publicPreviewDate": "November CY2025",
+    "created": "2026-01-21T00:15:51",
+    "publicRoadmapStatus": "Include this month",
+    "status": "In development",
+    "modified": "2026-01-21T00:15:51",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "Web"
+      },
+      {
+        "tagName": "Microsoft Entra"
+      },
+      {
+        "tagName": "General Availability"
+      },
+      {
+        "tagName": "Preview"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Entra"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        },
+        {
+          "tagName": "Preview"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Web"
+        }
+      ]
+    }
+  },
+  {
+    "id": 545894,
+    "title": "Microsoft Entra: App Deactivation",
+    "description": "Admins or app owners can now safely pause an app’s access to Entra protected resources without deleting it or disrupting configuration. When deactivated, the app and its service principals globally (across tenants) can’t request new tokens and user sign ins are blocked, while existing tokens simply expire on their normal schedule. This makes it easy for admins to temporarily freeze suspicious or unused apps during investigations, bulk cleanup, or tenant hygiene work. This capability is now available in the Entra admin center (App registrations, Enterprise apps) and Microsoft Graph API.",
+    "moreInfoLink": "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/deactivate-application-portal",
+    "publicDisclosureAvailabilityDate": "February CY2026",
+    "publicPreviewDate": "November CY2025",
+    "created": "2026-01-13T00:00:10",
+    "publicRoadmapStatus": "Include this month",
+    "status": "Rolling out",
+    "modified": "2026-02-20T00:00:24",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "Web"
+      },
+      {
+        "tagName": "Microsoft Entra"
+      },
+      {
+        "tagName": "General Availability"
+      },
+      {
+        "tagName": "Preview"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Entra"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        },
+        {
+          "tagName": "Preview"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Web"
+        }
+      ]
+    }
+  },
+  {
+    "id": 529855,
+    "title": "Microsoft Entra: Conditional Access support for Entra ID Account Recovery",
+    "description": "Microsoft Entra ID Account Recovery is an advanced authentication recovery mechanism that enables users to regain access to their organizational accounts when they've lost access to all registered authentication methods. This feature adds additional support for protecting the account recovery flow by enabling CA policies to be applied. Learn more",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "May CY2026",
+    "publicPreviewDate": "March CY2026",
+    "created": "2025-12-23T23:00:50",
+    "publicRoadmapStatus": "Include this month",
+    "status": "In development",
+    "modified": "2025-12-23T23:00:50",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "Web"
+      },
+      {
+        "tagName": "Microsoft Entra"
+      },
+      {
+        "tagName": "General Availability"
+      },
+      {
+        "tagName": "Preview"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Entra"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        },
+        {
+          "tagName": "Preview"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Web"
+        }
+      ]
+    }
+  },
+  {
+    "id": 536578,
+    "title": "Microsoft Entra: Microsoft Security Copilot App Lifecycle Management Agent in Microsoft Entra",
+    "description": "Application Lifecycle Management Agent: This agent unifies the entire application lifecycle into one intelligent workflow—replacing multiple\ndisconnected admin tasks with a single, guided experience. It automatically discovers unmanaged private apps using Global Secure Access telemetry, recommends onboarding them to Microsoft Entra, and handles setup with automated naming, tagging, and least-privilege scoping. After onboarding, the agent continuously monitors app usage and permissions, flags unused high privileged apps and proactively notifies owners with clear next steps via Teams or email. Using the data the agent has gathered, it suggests a phased disablement plan that admins can customize to their risk prioritization preferences.",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "July CY2026",
+    "publicPreviewDate": "December CY2025",
+    "created": "2025-12-05T00:00:35",
+    "publicRoadmapStatus": "Include this month",
+    "status": "In development",
+    "modified": "2026-02-12T00:15:53",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "Web"
+      },
+      {
+        "tagName": "Microsoft Entra"
+      },
+      {
+        "tagName": "General Availability"
+      },
+      {
+        "tagName": "Preview"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Entra"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        },
+        {
+          "tagName": "Preview"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Web"
+        }
+      ]
+    }
+  },
+  {
+    "id": 529857,
+    "title": "Microsoft Entra: ID Account Recovery",
+    "description": "Self-Serv Account Recovery for tenants using Passkey.Account Recovery from Total Loss using Verified ID with Face Check",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "June CY2026",
+    "publicPreviewDate": "November CY2025",
+    "created": "2025-11-21T00:00:57",
+    "publicRoadmapStatus": "Include this month",
+    "status": "In development",
+    "modified": "2025-11-21T00:00:57",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "Android"
+      },
+      {
+        "tagName": "Desktop"
+      },
+      {
+        "tagName": "iOS"
+      },
+      {
+        "tagName": "Microsoft Entra"
+      },
+      {
+        "tagName": "General Availability"
+      },
+      {
+        "tagName": "Preview"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Entra"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        },
+        {
+          "tagName": "Preview"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Android"
+        },
+        {
+          "tagName": "Desktop"
+        },
+        {
+          "tagName": "iOS"
+        }
+      ]
+    }
+  },
+  {
+    "id": 518221,
+    "title": "Microsoft Entra: Cross-tenant security group synchronization",
+    "description": "We’re introducing cross-tenant group synchronization, a new capability that enables organizations to synchronize security groups across Microsoft Entra tenants. This feature simplifies collaboration scenarios by allowing shared access to resources across tenants while maintaining centralized group management. It also streamlines administration of multiple tenants by centralizing group membership control, reducing duplication and manual overhead.  ",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "April CY2026",
+    "publicPreviewDate": "January CY2026",
+    "created": "2025-11-14T23:15:39",
+    "publicRoadmapStatus": "Include this month",
+    "status": "Launched",
+    "modified": "2026-06-01T23:15:29",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "GCC"
+      },
+      {
+        "tagName": "GCC High"
+      },
+      {
+        "tagName": "DoD"
+      },
+      {
+        "tagName": "Web"
+      },
+      {
+        "tagName": "Microsoft Entra"
+      },
+      {
+        "tagName": "General Availability"
+      },
+      {
+        "tagName": "Preview"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Entra"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        },
+        {
+          "tagName": "GCC"
+        },
+        {
+          "tagName": "GCC High"
+        },
+        {
+          "tagName": "DoD"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        },
+        {
+          "tagName": "Preview"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Web"
+        }
+      ]
+    }
+  },
+  {
+    "id": 498158,
+    "title": "Microsoft Entra: Improved Backup and Restore Experience for the Authenticator App on iOS",
+    "description": "Users of the Microsoft Authenticator app on iOS will be able to back up account names—including Microsoft work or school accounts, Microsoft personal accounts, and third-party accounts like Amazon or Google—using iCloud and iCloud Keychain. This enables secure, end-to-end encrypted backup of account names and TOTP credentials. When setting up a new iOS device, account names will automatically appear in the app, and users can sign in to complete setup.",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "August CY2025",
+    "publicPreviewDate": "September CY2025",
+    "created": "2025-07-09T23:00:43",
+    "publicRoadmapStatus": "Include this month",
+    "status": "In development",
+    "modified": "2025-07-09T23:00:43",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "iOS"
+      },
+      {
+        "tagName": "Microsoft Entra"
+      },
+      {
+        "tagName": "General Availability"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Entra"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "iOS"
+        }
+      ]
+    }
+  },
+  {
+    "id": 470023,
+    "title": "Microsoft 365 admin center: Google to Entra Identity Sync service",
+    "description": "Google to Entra Identity Sync service is a cloud-2-cloud user Identity onboarding and one way synchronization tool from Google workspace to Entra ID. This will be available as part of the M365 Admin center for Google compete customers moving into M365 to create the identities in M365 farm and move Drive and Mail content into Onedrive and Exchange online",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "January CY2025",
+    "publicPreviewDate": "December CY2024",
+    "created": "2024-11-22T23:15:35",
+    "publicRoadmapStatus": "Include this month",
+    "status": "In development",
+    "modified": "2024-11-22T23:15:35",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "Web"
+      },
+      {
+        "tagName": "Microsoft 365"
+      },
+      {
+        "tagName": "Microsoft 365 Admin Center"
+      },
+      {
+        "tagName": "Microsoft Entra"
+      },
+      {
+        "tagName": "General Availability"
+      },
+      {
+        "tagName": "Preview"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft 365"
+        },
+        {
+          "tagName": "Microsoft 365 Admin Center"
+        },
+        {
+          "tagName": "Microsoft Entra"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        },
+        {
+          "tagName": "Preview"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Web"
+        }
+      ]
+    }
+  },
+  {
+    "id": 409529,
+    "title": "Microsoft Entra: Passkey authentication in brokered Microsoft apps on Android",
+    "description": "Microsoft Entra ID users can now use a passkey to sign into Microsoft apps on Android devices where an authentication broker like Microsoft Authenticator or Microsoft Intune Company Portal is installed.",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "March CY2025",
+    "publicPreviewDate": "August CY2024",
+    "created": "2024-07-26T22:30:19",
+    "publicRoadmapStatus": "Include this month",
+    "status": "In development",
+    "modified": "2024-08-21T23:45:23",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "Android"
+      },
+      {
+        "tagName": "Microsoft Entra"
+      },
+      {
+        "tagName": "General Availability"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Entra"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Android"
+        }
+      ]
+    }
+  },
+  {
+    "id": 569434,
+    "title": "Microsoft Teams: App centric management in Teams Admin Center to manage the Apps access for tenants, end-users, and groups in DoD",
+    "description": "App centric management introduces new admin settings to control who in the tenant can install Teams apps. First, admins can set a default value for new apps that are published to Teams app store. Second, admins can edit the availability of an app to “All users can install,” “Specific users and groups can install,” or “No user can install.” This feature evolves the existing app permission policies and provides admins with the ability to manage access to the app individually. The app permission policies for existing customers are migrated to maintain existing app availability in the tenant.",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "September CY2026",
+    "publicPreviewDate": "",
+    "created": "2026-08-14T21:56:10",
+    "publicRoadmapStatus": "Include this month",
+    "status": "In development",
+    "modified": "2026-08-14T21:56:10",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "DoD"
+      },
+      {
+        "tagName": "Web"
+      },
+      {
+        "tagName": "Microsoft Teams"
+      },
+      {
+        "tagName": "General Availability"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Teams"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "DoD"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Web"
+        }
+      ]
+    }
+  },
+  {
+    "id": 569433,
+    "title": "Microsoft Teams: App centric management in Teams Admin Center to manage the Apps access for tenants, end-users, and groups in GCC High",
+    "description": "App centric management introduces new admin settings to control who in the tenant can install Teams apps. First, admins can set a default value for new apps that are published to Teams app store. Second, admins can edit the availability of an app to “All users can install,” “Specific users and groups can install,” or “No user can install.” This feature evolves the existing app permission policies and provides admins with the ability to manage access to the app individually. The app permission policies for existing customers are migrated to maintain existing app availability in the tenant.",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "September CY2026",
+    "publicPreviewDate": "",
+    "created": "2026-08-14T21:56:10",
+    "publicRoadmapStatus": "Include this month",
+    "status": "In development",
+    "modified": "2026-08-14T21:56:10",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "GCC High"
+      },
+      {
+        "tagName": "Web"
+      },
+      {
+        "tagName": "Microsoft Teams"
+      },
+      {
+        "tagName": "General Availability"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Microsoft Teams"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "GCC High"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Web"
+        }
+      ]
+    }
+  },
+  {
+    "id": 499659,
+    "title": "Excel: =COPILOT Function",
+    "description": "Use the new =COPILOT function directly in Excel formulas to generate, classify, and summarize text and data. We have decided not to move forward with this feature. We apologize for the inconvenience.",
+    "moreInfoLink": null,
+    "publicDisclosureAvailabilityDate": "January CY2027",
+    "publicPreviewDate": "",
+    "created": "2025-12-17T00:15:13",
+    "publicRoadmapStatus": "Include this month",
+    "status": "Cancelled",
+    "modified": "2026-08-13T22:42:07",
+    "locale": null,
+    "tags": [
+      {
+        "tagName": "Worldwide (Standard Multi-Tenant)"
+      },
+      {
+        "tagName": "Mac"
+      },
+      {
+        "tagName": "Excel"
+      },
+      {
+        "tagName": "Microsoft Copilot (Microsoft 365)"
+      },
+      {
+        "tagName": "General Availability"
+      }
+    ],
+    "tagsContainer": {
+      "products": [
+        {
+          "tagName": "Excel"
+        },
+        {
+          "tagName": "Microsoft Copilot (Microsoft 365)"
+        }
+      ],
+      "cloudInstances": [
+        {
+          "tagName": "Worldwide (Standard Multi-Tenant)"
+        }
+      ],
+      "releasePhase": [
+        {
+          "tagName": "General Availability"
+        }
+      ],
+      "platforms": [
+        {
+          "tagName": "Mac"
+        }
+      ]
+    }
+  }
+]

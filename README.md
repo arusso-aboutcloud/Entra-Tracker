@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/arusso-aboutcloud/Entra-Tracker/actions/workflows/trivy-scan.yml"><img src="./trivy-badge.svg" alt="Trivy Security Scan" height="24"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/sources-6-blue" alt="6 data sources">
+  <img src="https://img.shields.io/badge/sources-7-blue" alt="7 data sources">
   <img src="https://img.shields.io/badge/update-every_4h-green" alt="Updated every 4 hours">
   <img src="https://img.shields.io/badge/cost-€0/month-brightgreen" alt="€0/month">
 </p>
@@ -27,7 +27,7 @@
 
 ## What It Does
 
-A fully automated, €0/month change tracker that monitors six official Microsoft sources for Entra ID updates -- what's new, previews, retirements, and breaking changes. Every update is classified by type, service category, and impact, then served through a searchable, filterable web UI.
+A fully automated, €0/month change tracker that monitors seven official Microsoft sources for Entra ID updates -- what's new, previews, retirements, breaking changes, and the Microsoft 365 Roadmap. Every update is classified by type, service category, and impact, then served through a searchable, filterable web UI.
 
 ---
 
@@ -70,7 +70,7 @@ This repository is continuously scanned by [Trivy](https://trivy.dev/) on every 
 | `ENTRA_CACHE` | KV Namespace | Single-key cache of parsed articles + metadata |
 | `TRACKER_DB` | D1 Database | `entra-tracker-history`, write-only revision history (Phase 3) — see below |
 
-**Cron Trigger:** Every 4 hours -- scrapes all 5 sources in parallel and refreshes KV.
+**Cron Trigger:** Every 4 hours -- fetches all 7 sources in parallel and refreshes KV.
 
 **CI Deploy:** `.github/workflows/deploy-worker.yml` runs `wrangler deploy` automatically
 on every push to `main` that touches `api/**`. Runs on Node.js 24 (`FORCE_JAVASCRIPT_ACTIONS_TO_NODE24`
@@ -161,7 +161,7 @@ Machine-readable per-source health, meant to be polled by an external monitor. N
 }
 ```
 
-`ratio` and `trailingMedian` are `null` until a source has at least one successful build recorded (see "Degraded mode" below for how the trailing window fills). Source ids match `item.source` (`entra-whatsnew-md`, `fslogix-docs`, `external-id-docs`, `b2c-docs`, `external-id-commits`, `graph-changelog`) — note the main envelope's `sources` object uses slightly different key spellings (a pre-existing inconsistency, not touched here); `/health`'s keys are the canonical `item.source` values.
+`ratio` and `trailingMedian` are `null` until a source has at least one successful build recorded (see "Degraded mode" below for how the trailing window fills). Source ids match `item.source` (`entra-whatsnew-md`, `fslogix-docs`, `external-id-docs`, `b2c-docs`, `external-id-commits`, `graph-changelog`, `m365-roadmap`) — note the main envelope's `sources` object uses slightly different key spellings (a pre-existing inconsistency, not touched here); `/health`'s keys are the canonical `item.source` values.
 
 **Query parameters:**
 
@@ -196,6 +196,39 @@ Machine-readable per-source health, meant to be polled by an external monitor. N
 
 **Threshold note:** the cross-source merge similarity threshold (0.82, Phase 0.1) has only ever fired on hand-built fixtures — `crossSourceMerged` has been 0 against live data every time it's been checked so far. The first time it fires for real, the merge should be spot-checked before being trusted; don't tune the threshold without that evidence.
 
+**`announcements[]` field (Phase 5, additive):** every item now carries `announcements: []`. Empty for almost everything; populated when a Microsoft 365 Roadmap entry has been correlated to this item (see "Microsoft 365 Roadmap correlation" below). Each entry:
+
+```json
+{
+  "type": "roadmap",
+  "id": "518221",
+  "url": "https://www.microsoft.com/en-us/microsoft-365/roadmap?searchterms=518221",
+  "statedStatus": "Launched",
+  "statedDate": "2026-04",
+  "matchBasis": "exact-id" | "strong-title-date",
+  "matchConfidence": 1
+}
+```
+
+`statedDate` is month-precision (`yyyy-mm`), exactly as the roadmap gives it — never padded to a fabricated day. `matchBasis` is `'exact-id'` (the item's own text explicitly references the roadmap feature id — treat as a fact) or `'strong-title-date'` (title + date similarity cleared a conservative bar — treat as a hint, not a fact; the frontend labels this "likely related").
+
+**`dateConflict` field (Phase 5, additive):** `true` when a correlated roadmap entry's stated date disagrees (different month) with an existing `deadline` already derived for that item from another Microsoft source. Both dates are kept — the roadmap date never overwrites `deadline` — this is meant to surface a genuine disagreement between two official Microsoft channels, not to be resolved automatically. `false` on every other item, including every item with no roadmap correlation at all.
+
+## Microsoft 365 Roadmap correlation (Phase 5)
+
+Roadmap items carry structured Microsoft metadata (a feature id, a lifecycle status, a stated date) and are treated as evidence tier A, same as a `**Type:**` block or a Graph changelog deprecation sentence.
+
+**Deliberately conservative, on purpose:** the Phase 0.1 cross-source merge threshold (0.82) has never once fired against real data in this codebase's history — an unvalidated threshold that just silently never engages is a real failure mode, not a hypothetical one. Phase 5 does not repeat it: correlation only auto-attaches on two conservative bases, and everything else is captured for evidence rather than guessed at.
+
+- **`exact-id`** — the tracked item's own text explicitly references the roadmap feature's numeric id. Strongest possible basis; attaches unconditionally, no date-window requirement.
+- **`strong-title-date`** — title similarity (via a roadmap-specific `roadmapTitleSimilarity()`, deliberately separate from the existing `titleSimilarity()` that backs the already-shipped 0.82/0.70 thresholds — see `api/__fixtures__/roadmap/README.md` for why reusing the shared function would have understated a real, genuine match) clears `STRONG_TITLE_DATE_SIMILARITY_THRESHOLD = 0.75`, **and** the roadmap's stated date falls within `ROADMAP_DATE_WINDOW_MONTHS = 1` of the tracked item's own deadline/announced date. Both conditions validated against one real pair (roadmap id `518221` vs. its real `whats-new.md` counterpart, both describing "Cross-tenant security group synchronization") — same "validate against a real pair, set the bar with margin below it" methodology Phase 1 used for its own 0.70 threshold.
+
+A correlated roadmap item does **not** become its own card — it attaches to the matched item's `announcements[]` instead. An uncorrelated roadmap item (surviving the product-tag pre-filter and the taxonomy, matching nothing) becomes its own standalone tier-A item.
+
+**Sub-threshold capture, not assertion:** every near-miss (some title similarity found, but not enough to clear the bar) is recorded — roadmap id, tracked item id, score, date gap — in KV under `entra_tracker_roadmap_candidates_v1` (capped at 200, most-recent-first). This is diagnostic-only: it is never exposed via the public API or the frontend. It exists so the threshold can eventually be recalibrated from real accumulated evidence instead of being guessed at twice.
+
+**Non-fatal, side-band:** correlation runs per roadmap item with its own try/catch — one malformed item can't cost every *other* roadmap item in the same build its chance to correlate or publish, and a total correlation failure still leaves roadmap items publishing as standalone (uncorrelated) rather than being lost. `m365-roadmap` also gets its own trailing health baseline in the Phase 4 degraded gate (below) — a roadmap outage degrades exactly like any other source's outage, and a zero-count build doesn't poison its own baseline.
+
 ## Degraded mode (Phase 4)
 
 The failure mode this closes: a source's HTML restructures, the parser returns 200 with 3 items instead of 90, and every missing item silently vanishes from the feed with no signal. "Never lie quietly" is the whole point.
@@ -228,6 +261,7 @@ All sources are Microsoft-official (MicrosoftDocs GitHub repos + learn.microsoft
 | 4 | `azure-docs: active-directory-b2c/whats-new-docs.md` | Markdown | B2C docs changelog (B2C is end-of-sale; winding down) |
 | 5 | `entra-docs: commits — external-id/customers` | GitHub Commits API | External ID customer how-tos (direct repo watch, pre-changelog) — catches passkey/FIDO2 guides before MS adds them to the curated index |
 | 6 | `developer.microsoft.com: Graph changelog` | RSS | Microsoft Graph API resource/endpoint **deprecations** (e.g. the PIM iteration 2 API retirement). The feed is a 2500+ item firehose, so it is filtered to items with deprecation language whose content matches the service taxonomy (see below) — typically 1–3 high-signal items. |
+| 7 | `microsoft.com: 365 Roadmap API` (Phase 5) | JSON API | `https://www.microsoft.com/releasecommunications/api/v1/m365`, unauthenticated. Pre-filtered server-side to items tagged `tagsContainer.products[].tagName === "Microsoft Entra"` (~12 of ~1800 items live), then routed through the same taxonomy as every other source — the tag is only a cheap pre-filter, not the scoping authority. Excludes `status: "Cancelled"` items. See "Microsoft 365 Roadmap correlation" below. |
 
 Changelog parsers track raw-entry counts; if a source matches zero entries the API response includes a `warnings[]` entry so upstream format drift surfaces instead of failing silently.
 
@@ -271,6 +305,7 @@ Every item also carries a Tier A/B/C badge recording how strong Microsoft's own 
 - 📊 Methodology section — collapsible, plain-language explanation of evidence tiers and deadline confidence, written for an Entra admin rather than a developer; now also includes a coverage statement listing every service area the tracker covers, sourced from the same taxonomy as the filter dropdown
 - ⚠️ Degraded-mode banner — appears only when a source hasn't updated normally, names it plainly ("hasn't updated normally this cycle"), no red-alert styling; disappears automatically once the source recovers
 - 🕓 Per-source status footer — last successful update time for every source, sourced from `GET /health`; a degraded source's stale timestamp is visually distinguished from the others
+- 🛰️ Roadmap announcements on cards (Phase 5) — a correlated Microsoft 365 Roadmap entry renders as a supplementary row (roadmap status, stated date, link), labelled a definite "Roadmap" tag for an explicit id match or a hedged "likely related" for a title/date similarity match; a `dateConflict` between the roadmap and another Microsoft source is shown as a plain, neutral badge rather than silently resolved
 
 ---
 
@@ -285,7 +320,8 @@ Every item also carries a Tier A/B/C badge recording how strong Microsoft's own 
 │   │   ├── deadline/     # Real captured Microsoft text (deadline scoring, Phase 1)
 │   │   ├── identity/     # Real title-rewording cases (item identity, Phase 1)
 │   │   ├── evidence/     # Cross-source tier-ranking fixture (Phase 1)
-│   │   └── taxonomy/     # Real classification fixtures + raw->canonical mapping (Phase 2)
+│   │   ├── taxonomy/     # Real classification fixtures + raw->canonical mapping (Phase 2)
+│   │   └── roadmap/      # Real M365 Roadmap capture + real correlation pair + disclosed constructed fixtures (Phase 5)
 │   ├── migrations/       # D1 schema migrations (forward-only)
 │   │   └── 0001_create_item_revisions.sql  # Revision store table (Phase 3)
 │   ├── package.json      # type:module marker for the test runner (no deps)
@@ -328,4 +364,4 @@ MIT — see [LICENSE](./LICENSE) for full text.
 
 ---
 
-*Last reconciled: 2026-08-14*
+*Last reconciled: 2026-08-16*

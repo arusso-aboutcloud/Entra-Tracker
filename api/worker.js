@@ -82,6 +82,11 @@ const COMMITS_API_URL = 'https://api.github.com/repos/MicrosoftDocs/entra-docs/c
 // API edits, so it is filtered HARD downstream (see parseGraphChangelog).
 const GRAPH_CHANGELOG_URL = 'https://developer.microsoft.com/en-us/graph/changelog/rss/';
 
+// Microsoft 365 Roadmap API (Phase 5) -- official, unauthenticated JSON. Real
+// response shape and product-tag vocabulary verified live before writing any
+// parsing code (see parseM365Roadmap()'s own comment for what was found).
+const M365_ROADMAP_URL = 'https://www.microsoft.com/releasecommunications/api/v1/m365';
+
 // Candidate official feeds that are NOT currently ingestable -- e.g. the Microsoft
 // Entra blog RSS broke during the TechCommunity platform migration (all known URLs
 // 404 or return an empty channel). Probed on each build (see probeCandidateFeeds):
@@ -832,6 +837,12 @@ const CROSS_SOURCE_RANK = {
   'b2c-docs':            2,
   'fslogix-docs':        3,
   'external-id-commits': 4,
+  // Lowest priority, explicit rather than relying on the implicit ?? 99
+  // fallback -- if a roadmap item is EVER the winning side of a cross-source
+  // merge (it shouldn't be: roadmap items that correlate attach to
+  // announcements[] instead of merging, see correlateRoadmapItems), it
+  // should never out-rank a Microsoft first-party source's own fields.
+  'm365-roadmap':        5,
 };
 function sourceRank(source) {
   return CROSS_SOURCE_RANK[source] ?? 99;
@@ -1543,6 +1554,340 @@ function parseGraphChangelog(xml) {
   return results;
 }
 
+// ── PARSER 7: Microsoft 365 Roadmap API (Phase 5) ───────────────────────────
+// Real response shape verified live before writing any of this (rule: do not
+// assume field/tag names). Fetched 2026-08-16, 1813 total roadmap items:
+//   - top-level: a bare JSON array (not {items: [...]})
+//   - per item: id (number), title, description, moreInfoLink (string or
+//     null -- populated on only 21/1813 items), publicDisclosureAvailabilityDate
+//     and publicPreviewDate (both "<Month> CY<Year>", e.g. "September CY2026";
+//     every non-empty occurrence across all 1813 items matched this exact
+//     shape, no variants seen), created/modified (ISO datetime), status
+//     ('Launched' | 'In development' | 'Rolling out' | 'Cancelled' -- exactly
+//     these 4 values, nothing else), publicRoadmapStatus (constant
+//     'Include this month' on every single item -- not a useful per-item
+//     signal), tags (flat list) and tagsContainer (grouped: cloudInstances,
+//     platforms, products, releasePhase -- each an array of {tagName}).
+//   - tagsContainer.products[].tagName === 'Microsoft Entra' is the real
+//     identity product tag: 12 of 1813 items carried it at verification
+//     time. This is a CHEAP PRE-FILTER only, same role as GRAPH_ENTRA_RE
+//     used to play before Phase 2 -- every item that survives it still goes
+//     through the real scoping authority, the Phase 2 taxonomy.
+const ROADMAP_PRODUCT_TAG = 'Microsoft Entra';
+
+// The roadmap is inherently forward-looking (new capabilities being built),
+// never a retirement -- map its 4 real status values accordingly. Cancelled
+// is excluded entirely: nothing is happening, there's nothing to track.
+const ROADMAP_STATUS_TO_CATEGORY = {
+  'launched':        'new_feature',
+  'rolling out':     'preview',
+  'in development':  'preview',
+};
+
+// "September CY2026" -> end-of-month Date (matches extractDeadline's MY
+// end-of-month convention) or null. Verified live: this exact shape covers
+// every non-empty date string in the real feed, no fallback parsing needed.
+function parseRoadmapMonthYear(str) {
+  if (!str) return null;
+  const m = String(str).match(/^([A-Za-z]+)\s+CY(\d{4})$/);
+  if (!m) return null;
+  const mo = MONTHS[m[1].toLowerCase()];
+  if (!mo) return null;
+  return new Date(+m[2], mo, 0);
+}
+function roadmapDateToISO(str) {
+  const d = parseRoadmapMonthYear(str);
+  return d ? d.toISOString().split('T')[0] : null;
+}
+// "September CY2026" -> "2026-09" -- the announcements[] schema wants the
+// date "as roadmap gives it" (month precision), not a fabricated day.
+function roadmapDateToDisplayMonth(str) {
+  if (!str) return null;
+  const m = String(str).match(/^([A-Za-z]+)\s+CY(\d{4})$/);
+  if (!m) return null;
+  const mo = MONTHS[m[1].toLowerCase()];
+  if (!mo) return null;
+  return `${m[2]}-${String(mo).padStart(2, '0')}`;
+}
+
+// Deliberately a SEPARATE similarity function from titleSimilarity()/
+// normalizeTitleForDedup() -- those back Phase 0.1's 0.82 and Phase 1's
+// 0.70 thresholds, both already live against real data; changing their
+// normalisation for this phase risked silently perturbing already-shipped,
+// already-tuned behaviour for an unrelated matching context (external
+// roadmap titles are worded very differently from internal Microsoft-source
+// titles).
+//
+// Two real, verified findings drove this design:
+//  1. normalizeTitleForDedup() deletes hyphens outright, so "Cross-tenant"
+//     becomes the single token "crosstenant" -- it then can never match
+//     "cross"+"tenant" as separate words. Confirmed against a real pair: the
+//     live roadmap item id 518221 ("Microsoft Entra: Cross-tenant security
+//     group synchronization") vs. the real whats-new.md entry "General
+//     Availability - Cross tenant group synchronization" (same feature,
+//     confirmed by description text, both captured live 2026-08-16) scores
+//     only 0.25 on titleSimilarity().
+//  2. Roadmap titles and whats-new.md titles each carry their own
+//     boilerplate lifecycle/product-label words ("General Availability -",
+//     "Microsoft Entra:", "Public Preview -") that are near-universal noise
+//     diluting the Jaccard score rather than describing what changed.
+//     Stripping a small explicit list of them raises the SAME real pair to
+//     0.8.
+const ROADMAP_BOILERPLATE_WORDS = new Set([
+  'general', 'availability', 'public', 'preview', 'private', 'plan', 'change',
+  'upcoming', 'generally', 'available', 'microsoft', 'entra', 'feature', 'new',
+]);
+function roadmapNormalizeTitle(title) {
+  return String(title || '')
+    .toLowerCase()
+    .replace(/-/g, ' ')
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function roadmapTitleSimilarity(a, b) {
+  const strip = (t) => new Set(
+    roadmapNormalizeTitle(t).split(' ').filter(w => w && !ROADMAP_BOILERPLATE_WORDS.has(w))
+  );
+  const ta = strip(a), tb = strip(b);
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let intersection = 0;
+  for (const w of ta) if (tb.has(w)) intersection++;
+  const union = ta.size + tb.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+// Set with margin below the real validated pair's score (0.8) -- same
+// pattern Phase 1 used for its 0.70 threshold (real pair scored 0.75,
+// threshold set at 0.70 to clear it with room). Deliberately conservative
+// per this phase's core design principle: a wrong correlation is worse than
+// no correlation. Do NOT loosen this without new real evidence -- see the
+// carried-in note about the still-unfired Phase 0.1 0.82 threshold, which
+// is exactly the mistake this value and the sub-threshold capture mechanism
+// (see correlateRoadmapItems) exist to avoid repeating.
+const STRONG_TITLE_DATE_SIMILARITY_THRESHOLD = 0.75;
+const ROADMAP_DATE_WINDOW_MONTHS = 1;
+
+// moreInfoLink is populated on only 21/1813 real items; for everything else,
+// fall back to the roadmap site's own search-by-id URL pattern.
+function roadmapPublicUrl(item) {
+  if (item && item.moreInfoLink) return item.moreInfoLink;
+  return `https://www.microsoft.com/en-us/microsoft-365/roadmap?searchterms=${item.id}`;
+}
+
+function parseM365Roadmap(jsonText) {
+  let arr;
+  try { arr = JSON.parse(jsonText); } catch (e) { return []; }
+  if (!Array.isArray(arr)) return [];
+
+  const results = [];
+  for (const it of arr) {
+    if (!it || typeof it !== 'object') continue;
+
+    const products = (it.tagsContainer && it.tagsContainer.products) || [];
+    if (!products.some(p => p && p.tagName === ROADMAP_PRODUCT_TAG)) continue;
+
+    const statusLower = String(it.status || '').toLowerCase();
+    if (statusLower === 'cancelled') continue; // nothing is happening -- nothing to track
+    const category = ROADMAP_STATUS_TO_CATEGORY[statusLower];
+    if (!category) continue; // unrecognised status -- skip rather than guess at meaning
+
+    const rawTitle = String(it.title || '').trim();
+    const title = `[Roadmap] ${rawTitle}`;
+    if (!rawTitle || title.length < 12) continue;
+
+    const description  = String(it.description || '').slice(0, 600);
+    const link          = roadmapPublicUrl(it);
+    const announcedDate = (it.created || '').split('T')[0] || null;
+    const statedDateSource = it.publicDisclosureAvailabilityDate || it.publicPreviewDate || '';
+    const status = deriveStatus(null); // roadmap items carry no cutoff of their own -- always 'green'
+    const impact = deriveImpact(category, `${title} ${description}`);
+    // Tier A: roadmap items carry structured Microsoft metadata (feature id,
+    // status, dates) -- per the Phase 1 evidence model this is the same
+    // tier as a **Type:** block or a Graph changelog deprecation. 'roadmap'
+    // is a new basis value, additive to the existing enum.
+    const evidence = buildEvidence('A', 'roadmap', rawTitle.slice(0, 240), link);
+    // No Microsoft-assigned service-category string exists for roadmap items
+    // (products/platforms tags aren't that taxonomy) -- left '' like the
+    // other sources that lack one (graph-changelog, external-id-commits),
+    // so classifyTaxonomy() falls through to its Tier 2 title/description match.
+    const serviceCategory = '';
+    const namespace = isExternalId(title, serviceCategory) ? 'external-id' : 'entra-id';
+
+    results.push({
+      id:            makeId('m365-roadmap', link, title),
+      title,
+      description,
+      link,
+      pubDate:       it.created || '',
+      category,
+      status,
+      impact,
+      serviceCategory,
+      deadline:            null,
+      daysRemaining:       null,
+      deadlineConfidence:  null,
+      deadlineEvidence:    null,
+      deadlinePrecision:   null,
+      evidence,
+      source:        'm365-roadmap',
+      namespace,
+      articleUrl:    null,
+      announcedDate,
+      announcements: [],
+      dateConflict:  false,
+      // Internal-only scratch data for correlateRoadmapItems() -- always
+      // stripped before an item (standalone or otherwise) leaves that
+      // function, never present on anything buildTrackerData returns.
+      _roadmap: {
+        roadmapId:        it.id,
+        statedStatus:     it.status || '',
+        statedDateISO:    roadmapDateToISO(statedDateSource),
+        statedDateDisplay: roadmapDateToDisplayMonth(statedDateSource),
+      },
+    });
+  }
+  return results;
+}
+
+// Correlates each parsed roadmap item against every other already-taxonomy-
+// scoped item. A match ATTACHES to the target's announcements[] (the
+// roadmap item does not survive as its own item); no match means the
+// roadmap item becomes its own standalone item (its _roadmap scratch field
+// is stripped either way). Conservative by design (see
+// STRONG_TITLE_DATE_SIMILARITY_THRESHOLD's comment) -- a wrong correlation
+// is worse than none.
+//
+//   exact-id: the roadmap item's own numeric id appears as a whole word in
+//     another item's title/description/deadlineEvidence. Attached
+//     unconditionally, no date-window requirement -- an explicit id
+//     reference is definitive proof of "same feature" regardless of what
+//     dates are stated. This is also, deliberately, the ONLY case that can
+//     produce a genuine dateConflict (see below): a date-windowed match
+//     can't disagree by more than the window that let it match in the
+//     first place.
+//   strong-title-date: title similarity >= STRONG_TITLE_DATE_SIMILARITY_THRESHOLD
+//     AND the roadmap's stated date falls within ROADMAP_DATE_WINDOW_MONTHS
+//     of the target's own deadline/announcedDate.
+//
+// Note on the MC\d{6,7} (message-center id) pattern the work order
+// mentions: the roadmap API exposes no MC-id cross-reference field, so
+// there is no roadmap-side id to match an MC id found in tracked-item text
+// AGAINST in this phase -- only the roadmap's own numeric id is usable for
+// exact-id matching from this data source. Not implemented; flagged rather
+// than faked.
+//
+// dateConflict: set on the TARGET item (never the roadmap item, which
+// doesn't survive a successful match) when it already has its own
+// `deadline` and that deadline falls in a different month than the
+// roadmap's stated date. Deliberately does not compare against
+// `announcedDate` -- that's "when this was announced", a different kind of
+// date than "when this is available", and comparing them wouldn't be a
+// meaningful disagreement.
+//
+// Sub-threshold near-misses (title similarity found something, but not
+// enough to attach) are captured, never attached and never exposed
+// publicly -- see persistRoadmapCandidates(). This is the mechanism that
+// stops the still-unfired Phase 0.1 0.82 threshold problem from repeating
+// here: real match-quality data accumulates so the bar can be loosened
+// later from evidence, not guessed again.
+function correlateRoadmapItems(allItems, nowISO) {
+  const roadmapItems = allItems.filter(i => i.source === 'm365-roadmap');
+  const otherItems   = allItems.filter(i => i.source !== 'm365-roadmap');
+  const subThreshold = [];
+  const survivors     = [];
+
+  // Per-item try/catch, not just one around the whole function: a single
+  // malformed roadmap item (unexpected shape from a future API change, a
+  // missing _roadmap scratch field, etc.) must not cost every OTHER
+  // roadmap item its chance to correlate in the same build -- side-band and
+  // non-fatal at the finest grain that matters, matching the spirit of the
+  // work order's "a matcher error must not prevent roadmap items from
+  // publishing" rule as strictly as possible.
+  for (const ri of roadmapItems) {
+    try {
+      const meta = ri._roadmap;
+      let matched = null;
+      let matchBasis = null;
+      let matchScore = 1;
+
+      const idRe = new RegExp(`\\b${meta.roadmapId}\\b`);
+      for (const other of otherItems) {
+        const text = `${other.title} ${other.description} ${other.deadlineEvidence || ''}`;
+        if (idRe.test(text)) { matched = other; matchBasis = 'exact-id'; break; }
+      }
+
+      if (!matched) {
+        let bestScore = 0, bestCandidate = null, bestGap = null;
+        for (const other of otherItems) {
+          const sim = roadmapTitleSimilarity(ri.title.replace(/^\[Roadmap\]\s*/, ''), other.title);
+          const otherDateISO = other.deadline || other.announcedDate || null;
+          const gap = monthDiff(meta.statedDateISO, otherDateISO);
+          if (sim > bestScore) { bestScore = sim; bestCandidate = other; bestGap = gap; }
+          if (sim >= STRONG_TITLE_DATE_SIMILARITY_THRESHOLD && gap !== null && gap <= ROADMAP_DATE_WINDOW_MONTHS) {
+            matched = other; matchBasis = 'strong-title-date'; matchScore = sim;
+            break;
+          }
+        }
+        if (!matched && bestCandidate && bestScore > 0) {
+          subThreshold.push({
+            roadmapId:       meta.roadmapId,
+            roadmapTitle:    ri.title,
+            trackedItemId:   bestCandidate.id,
+            trackedItemTitle: bestCandidate.title,
+            score:           Math.round(bestScore * 1000) / 1000,
+            dateGapMonths:   bestGap,
+            capturedAt:      nowISO,
+          });
+        }
+      }
+
+      if (matched) {
+        matched.announcements = [...(matched.announcements || []), {
+          type:           'roadmap',
+          id:             String(meta.roadmapId),
+          url:            ri.link,
+          statedStatus:   meta.statedStatus,
+          statedDate:     meta.statedDateDisplay,
+          matchBasis,
+          matchConfidence: matchBasis === 'exact-id' ? 1 : matchScore,
+        }];
+        if (matched.deadline && meta.statedDateISO) {
+          const gap = monthDiff(matched.deadline, meta.statedDateISO);
+          if (gap !== null && gap >= 1) matched.dateConflict = true;
+        }
+      } else {
+        const { _roadmap, ...clean } = ri;
+        survivors.push(clean);
+      }
+    } catch (err) {
+      console.error('correlateRoadmapItems: skipping one malformed roadmap item (non-fatal):', err && err.message);
+      // Still publish it -- a correlation failure for this one item is not a
+      // reason to drop it from the feed, just to leave it uncorrelated.
+      const { _roadmap, ...clean } = ri;
+      survivors.push(clean);
+    }
+  }
+
+  return { items: [...otherItems, ...survivors], subThreshold };
+}
+
+// Diagnostic-only, side-band, non-fatal: never exposed via the public API
+// or the UI. Bounded (most-recent-first, capped) so it can't grow forever.
+const ROADMAP_CANDIDATES_KEY = 'entra_tracker_roadmap_candidates_v1';
+const ROADMAP_CANDIDATES_CAP = 200;
+async function persistRoadmapCandidates(env, newCandidates, nowISO) {
+  if (!env || !env.ENTRA_CACHE || !newCandidates || !newCandidates.length) return;
+  try {
+    let existing = [];
+    const stored = await env.ENTRA_CACHE.get(ROADMAP_CANDIDATES_KEY, 'text');
+    if (stored) existing = JSON.parse(stored) || [];
+    const merged = [...newCandidates, ...existing].slice(0, ROADMAP_CANDIDATES_CAP);
+    await env.ENTRA_CACHE.put(ROADMAP_CANDIDATES_KEY, JSON.stringify(merged), { expirationTtl: KV_RETENTION_SECONDS });
+  } catch (e) {
+    console.error('roadmap candidate capture (non-fatal):', e && e.message);
+  }
+}
+
 // ── CANDIDATE FEED HEALTH PROBE ─────────────────────────────────────────────
 // Tries each candidate feed's known/plausible URLs. If one returns parseable RSS
 // with a real item count (>=3, to reject empty-channel shells), push a warning so
@@ -1909,15 +2254,41 @@ async function buildTrackerData(prevItems, env) {
     console.log(`graph-changelog: ${items.length} items (${rawItems} raw feed items)`);
   } catch (err) { errors.push(`graph-changelog: ${err.message}`); console.error(err.message); }
 
+  // Source 7: Microsoft 365 Roadmap API (Phase 5) -- external source, so a
+  // fetch failure here must be exactly as non-fatal as any other source's:
+  // caught, logged to errors[], and left to the degraded gate below rather
+  // than allowed to shrink or break the rest of the build.
+  let countRM = 0;
+  try {
+    const json  = await fetchText(M365_ROADMAP_URL);
+    const items = parseM365Roadmap(json);
+    allItems.push(...items);
+    countRM = items.length;
+    console.log(`m365-roadmap: ${items.length} items`);
+  } catch (err) { errors.push(`m365-roadmap: ${err.message}`); console.error(err.message); }
+
   // Health probe: detect if a currently-unavailable official feed (Entra blog) has
   // been restored, so it can be promoted to a real source. Surfaces via warnings[].
   await probeCandidateFeeds(warnings);
+
+  // Universal announcements[]/dateConflict defaulting (Phase 5): only the
+  // roadmap parser sets these itself; every other source's items need them
+  // too so correlateRoadmapItems() can attach to ANY item regardless of
+  // which source produced it, and so the additive fields are always present
+  // on every item in the public response (never sometimes-missing).
+  for (const item of allItems) {
+    if (!Array.isArray(item.announcements)) item.announcements = [];
+    if (typeof item.dateConflict !== 'boolean') item.dateConflict = false;
+  }
 
   // Degraded gate (Phase 4): compare each source's RAW parse count (before
   // taxonomy/dedupe touch anything) against its trailing baseline. A source
   // that silently shrank has its items REPLACED with the previous good
   // snapshot's items for that source (flagged stale), rather than
   // publishing the shrunken set -- see applyDegradedGate()'s own comment.
+  // 'm365-roadmap' gets its own trailing baseline like every other source --
+  // a zero-count hard failure this build must not poison ITS OWN history,
+  // exactly the same guarantee every pre-existing source already has.
   const rawSourceCounts = {
     'entra-whatsnew-md':   countWN,
     'fslogix-docs':        countFS,
@@ -1925,6 +2296,7 @@ async function buildTrackerData(prevItems, env) {
     'b2c-docs':            countB2C,
     'external-id-commits': countEIC,
     'graph-changelog':     countGC,
+    'm365-roadmap':        countRM,
   };
   const buildTimestamp = new Date().toISOString();
   const { items: gatedItems, degraded } = await applyDegradedGate(env, allItems, rawSourceCounts, prevItems, buildTimestamp);
@@ -1933,9 +2305,32 @@ async function buildTrackerData(prevItems, env) {
   // Route every item through the service taxonomy exactly once, before
   // sort/dedupe/retention touch anything. Drops items matching no taxonomy
   // entry -- never silently, see routeThroughTaxonomy()'s unmatched/
-  // unmatchedSamples output, surfaced on the envelope below.
+  // unmatchedSamples output, surfaced on the envelope below. Roadmap items
+  // go through this exactly like any other source's -- the roadmap's own
+  // product tag (ROADMAP_PRODUCT_TAG) was only ever a cheap pre-filter; this
+  // taxonomy pass is the real scoping authority.
   const { items: taxonomyItems, unmatched, unmatchedSamples } = routeThroughTaxonomy(allItems);
   allItems = taxonomyItems;
+
+  // Correlate roadmap items against everything else (Phase 5). Side-band and
+  // non-fatal by design: a matcher error must never prevent roadmap items
+  // from publishing or the build from completing, so it's wrapped exactly
+  // like the D1/health/KV access patterns elsewhere in this file. On error,
+  // the roadmap items parsed above simply fall through as standalone items
+  // (still tier-A, still taxonomy-scoped) rather than being lost.
+  let subThresholdCandidates = [];
+  try {
+    const { items: correlated, subThreshold } = correlateRoadmapItems(allItems, buildTimestamp);
+    allItems = correlated;
+    subThresholdCandidates = subThreshold;
+  } catch (err) {
+    console.error('correlateRoadmapItems (non-fatal):', err && err.message);
+    // Strip the internal-only _roadmap scratch field so a matcher error
+    // can't leak it into the public response -- roadmap items still
+    // publish as standalone items, just uncorrelated.
+    allItems = allItems.map(i => { const { _roadmap, ...clean } = i; return clean; });
+  }
+  await persistRoadmapCandidates(env, subThresholdCandidates, buildTimestamp);
 
   // Sort: expired_recent (still actionable) -> expired -> red -> yellow ->
   // green, then days asc, then announcedDate desc (newest first) as tiebreak
@@ -2024,6 +2419,7 @@ async function buildTrackerData(prevItems, env) {
       'b2c-docs':            countB2C,
       'external-id-commits': countEIC,
       'graph-changelog':     countGC,
+      'm365-roadmap':        countRM,
     },
     errors:         errors.length   ? errors   : undefined,
     warnings:       warnings.length ? warnings : undefined,
@@ -2270,4 +2666,20 @@ export {
   evaluateSourceHealth,
   buildHealthResponse,
   applyDegradedGate,
+  M365_ROADMAP_URL,
+  ROADMAP_PRODUCT_TAG,
+  ROADMAP_STATUS_TO_CATEGORY,
+  parseRoadmapMonthYear,
+  roadmapDateToISO,
+  roadmapDateToDisplayMonth,
+  roadmapNormalizeTitle,
+  roadmapTitleSimilarity,
+  STRONG_TITLE_DATE_SIMILARITY_THRESHOLD,
+  ROADMAP_DATE_WINDOW_MONTHS,
+  roadmapPublicUrl,
+  parseM365Roadmap,
+  correlateRoadmapItems,
+  persistRoadmapCandidates,
+  ROADMAP_CANDIDATES_KEY,
+  ROADMAP_CANDIDATES_CAP,
 };
