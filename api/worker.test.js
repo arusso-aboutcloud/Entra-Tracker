@@ -33,6 +33,21 @@ import {
   evaluateSourceHealth,
   buildHealthResponse,
   applyDegradedGate,
+  parseWhatsNewMarkdown,
+  M365_ROADMAP_URL,
+  ROADMAP_PRODUCT_TAG,
+  parseRoadmapMonthYear,
+  roadmapDateToISO,
+  roadmapDateToDisplayMonth,
+  roadmapNormalizeTitle,
+  roadmapTitleSimilarity,
+  STRONG_TITLE_DATE_SIMILARITY_THRESHOLD,
+  ROADMAP_DATE_WINDOW_MONTHS,
+  roadmapPublicUrl,
+  parseM365Roadmap,
+  correlateRoadmapItems,
+  persistRoadmapCandidates,
+  ROADMAP_CANDIDATES_KEY,
 } from './worker.js';
 import workerDefault from './worker.js';
 
@@ -956,5 +971,384 @@ describe('buildTrackerData (Phase 4): degraded/stale are additive-only, non-fata
 
     // Confirm the working-KV run actually persisted a health snapshot (not vacuous).
     assert.ok(workingKV._store.has(HEALTH_KEY));
+  });
+});
+
+// ── MICROSOFT 365 ROADMAP SOURCE (Phase 5) ──────────────────────────────────
+// roadmap-real-subset.json is a real, unmodified live capture (2026-08-16) --
+// see __fixtures__/roadmap/README.md for the full provenance, the real
+// response shape verified live, and which pieces below are disclosed
+// constructed item-level fixtures (exact-id text references, dateConflict,
+// the Entra+Cancelled combination, and the near-miss pair) vs. real captures.
+
+function loadRoadmapRawText(...segments) {
+  return JSON.stringify(loadFixture('roadmap', ...segments));
+}
+
+describe('parseM365Roadmap (Phase 5)', () => {
+  test('real capture: only Microsoft-Entra-tagged, non-Cancelled items survive, mapped to the taxonomy-agnostic shape', () => {
+    const items = parseM365Roadmap(loadRoadmapRawText('roadmap-real-subset.json'));
+    // 12 real Microsoft-Entra-tagged items at capture time; the 2 real
+    // Microsoft-Teams-tagged items and the 1 real Cancelled item (both/all
+    // non-Entra) must be excluded by the product-tag pre-filter.
+    assert.equal(items.length, 12);
+    assert.ok(items.every(i => i.source === 'm365-roadmap'));
+    assert.ok(items.every(i => i.evidence.tier === 'A' && i.evidence.basis === 'roadmap'));
+    assert.ok(items.every(i => i.title.startsWith('[Roadmap] ')));
+    assert.ok(items.every(i => Array.isArray(i.announcements) && i.announcements.length === 0));
+    assert.ok(items.every(i => i.dateConflict === false));
+    assert.ok(items.every(i => i.deadline === null && i.daysRemaining === null));
+    // The parser's own output still carries the internal _roadmap scratch
+    // field -- it's correlateRoadmapItems (not the parser) that's
+    // responsible for stripping it before anything reaches the public
+    // response; see the correlateRoadmapItems tests below for that contract.
+    assert.ok(items.every(i => i._roadmap && typeof i._roadmap.roadmapId === 'number'));
+  });
+
+  test('real capture: status maps to category (Launched/Rolling out/In development -> new_feature/preview/preview)', () => {
+    const items = parseM365Roadmap(loadRoadmapRawText('roadmap-real-subset.json'));
+    const launched = items.find(i => i.title.includes('Cross-tenant security group synchronization'));
+    const rollingOut = items.find(i => i.title.includes('App Deactivation'));
+    const inDevelopment = items.find(i => i.title.includes('Passkey authentication in brokered Microsoft apps'));
+    assert.equal(launched.category, 'new_feature');
+    assert.equal(rollingOut.category, 'preview');
+    assert.equal(inDevelopment.category, 'preview');
+    assert.equal(launched.status, 'green');
+    assert.equal(rollingOut.status, 'green');
+  });
+
+  test('real capture: uses the real moreInfoLink when present, falls back to a search URL when absent', () => {
+    const items = parseM365Roadmap(loadRoadmapRawText('roadmap-real-subset.json'));
+    const withLink = items.find(i => i.title.includes('App Deactivation'));
+    assert.equal(withLink.link, 'https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/deactivate-application-portal');
+    const withoutLink = items.find(i => i.title.includes('Cross-tenant security group synchronization'));
+    assert.match(withoutLink.link, /^https:\/\/www\.microsoft\.com\/en-us\/microsoft-365\/roadmap\?searchterms=518221$/);
+  });
+
+  test('constructed (disclosed): an Entra-tagged item with status Cancelled is excluded -- no real live example existed at capture time', () => {
+    const constructed = [{
+      id: 999001,
+      title: 'Microsoft Entra: Some feature that got cancelled',
+      description: 'test',
+      moreInfoLink: null,
+      publicDisclosureAvailabilityDate: '',
+      publicPreviewDate: '',
+      created: '2026-01-01T00:00:00',
+      status: 'Cancelled',
+      tagsContainer: { products: [{ tagName: 'Microsoft Entra' }] },
+    }];
+    assert.deepEqual(parseM365Roadmap(JSON.stringify(constructed)), []);
+  });
+
+  test('malformed/empty input is handled without throwing', () => {
+    assert.deepEqual(parseM365Roadmap('not json'), []);
+    assert.deepEqual(parseM365Roadmap('{}'), []);
+    assert.deepEqual(parseM365Roadmap('[]'), []);
+  });
+});
+
+describe('roadmap date helpers', () => {
+  test('"<Month> CY<Year>" parses to end-of-month, ISO, and display-month forms', () => {
+    assert.equal(roadmapDateToISO('September CY2026'), '2026-09-30');
+    assert.equal(roadmapDateToDisplayMonth('September CY2026'), '2026-09');
+    assert.equal(roadmapDateToISO('April CY2026'), '2026-04-30');
+    assert.equal(roadmapDateToDisplayMonth('April CY2026'), '2026-04');
+  });
+  test('empty/unrecognised input -> null, never throws', () => {
+    assert.equal(parseRoadmapMonthYear(''), null);
+    assert.equal(parseRoadmapMonthYear(null), null);
+    assert.equal(roadmapDateToISO('garbage'), null);
+    assert.equal(roadmapDateToDisplayMonth('2026-09'), null);
+  });
+});
+
+describe('roadmapTitleSimilarity (Phase 5) -- deliberately separate from the existing titleSimilarity', () => {
+  test('real correlation pair (roadmap id 518221 vs. its real whats-new.md counterpart) scores 0.80, well above the 0.75 bar', () => {
+    const roadmapItems = parseM365Roadmap(loadRoadmapRawText('roadmap-real-subset.json'));
+    const roadmapItem = roadmapItems.find(i => i.title.includes('Cross-tenant security group synchronization'));
+    const [trackedItem] = parseWhatsNewMarkdown(loadText('roadmap', 'whats-new-correlation-pair.md'));
+    const score = roadmapTitleSimilarity(roadmapItem.title.replace(/^\[Roadmap\]\s*/, ''), trackedItem.title);
+    assert.equal(Math.round(score * 100) / 100, 0.8);
+    assert.ok(score >= STRONG_TITLE_DATE_SIMILARITY_THRESHOLD);
+    // Same real pair scores far lower on the existing shared function --
+    // this is exactly why roadmapTitleSimilarity is a separate function
+    // rather than a reuse of titleSimilarity/normalizeTitleForDedup (see
+    // README.md for the full reasoning).
+    assert.ok(titleSimilarity(roadmapItem.title.replace(/^\[Roadmap\]\s*/, ''), trackedItem.title) < 0.3);
+  });
+
+  test('constructed near-miss pair scores 0.667, clearly below the 0.75 bar', () => {
+    const score = roadmapTitleSimilarity(
+      'Conditional Access support for account recovery workflows',
+      'Conditional Access support for legacy account recovery tools'
+    );
+    assert.equal(Math.round(score * 1000) / 1000, 0.667);
+    assert.ok(score < STRONG_TITLE_DATE_SIMILARITY_THRESHOLD);
+  });
+
+  test('boilerplate words and hyphens are handled -- empty/boilerplate-only titles score 0, never throw', () => {
+    assert.equal(roadmapTitleSimilarity('', 'anything'), 0);
+    assert.equal(roadmapTitleSimilarity('General Availability', 'Public Preview'), 0);
+    assert.equal(roadmapNormalizeTitle('Cross-tenant sync'), 'cross tenant sync');
+  });
+});
+
+describe('correlateRoadmapItems (Phase 5)', () => {
+  test('exact-id: a tracked item whose text references the roadmap feature id attaches unconditionally (constructed, disclosed -- no real id cross-reference exists in current live content)', () => {
+    const roadmapOnly = JSON.parse(loadRoadmapRawText('roadmap-real-subset.json'));
+    const parsed = parseM365Roadmap(JSON.stringify(roadmapOnly.filter(i => i.id === 518221)));
+    const trackedItem = {
+      id: 'tracked-1', title: 'Cross tenant group sync GA', description: 'Rolling out now, see roadmap ID 518221 for details.',
+      deadlineEvidence: null, deadline: null, announcedDate: '2026-05-01', announcements: [], dateConflict: false,
+    };
+    const { items, subThreshold } = correlateRoadmapItems([...parsed, trackedItem], '2026-08-16T00:00:00.000Z');
+    assert.equal(items.length, 1, 'the roadmap item must not survive as its own standalone item once correlated');
+    assert.equal(items[0].id, 'tracked-1');
+    assert.equal(items[0].announcements.length, 1);
+    const ann = items[0].announcements[0];
+    assert.equal(ann.type, 'roadmap');
+    assert.equal(ann.id, '518221');
+    assert.equal(ann.statedStatus, 'Launched');
+    // publicDisclosureAvailabilityDate ("April CY2026") wins over
+    // publicPreviewDate ("January CY2026") -- the parser prefers GA
+    // availability over preview when both are present.
+    assert.equal(ann.statedDate, '2026-04');
+    assert.equal(ann.matchBasis, 'exact-id');
+    assert.equal(ann.matchConfidence, 1);
+    assert.ok(ann.url);
+    assert.equal(subThreshold.length, 0);
+  });
+
+  test('strong-title-date: the real correlation pair attaches (not standalone), matchBasis strong-title-date, confidence ~0.80', () => {
+    const roadmapOnly = JSON.parse(loadRoadmapRawText('roadmap-real-subset.json')).filter(i => i.id === 518221);
+    const parsed = parseM365Roadmap(JSON.stringify(roadmapOnly));
+    const [trackedItem] = parseWhatsNewMarkdown(loadText('roadmap', 'whats-new-correlation-pair.md'));
+    trackedItem.announcements = []; trackedItem.dateConflict = false;
+
+    const { items, subThreshold } = correlateRoadmapItems([...parsed, trackedItem], '2026-08-16T00:00:00.000Z');
+    assert.equal(items.length, 1);
+    assert.equal(items[0].id, trackedItem.id);
+    assert.equal(items[0].announcements.length, 1);
+    assert.equal(items[0].announcements[0].matchBasis, 'strong-title-date');
+    assert.equal(items[0].announcements[0].id, '518221');
+    assert.equal(Math.round(items[0].announcements[0].matchConfidence * 100) / 100, 0.8);
+    assert.equal(subThreshold.length, 0);
+  });
+
+  test('near-miss below the bar: captured in subThreshold, never attached, never present in the public items output', () => {
+    const roadmapItem = {
+      id: 999002, title: '[Roadmap] Conditional Access support for account recovery workflows',
+      description: '', link: 'https://example.invalid/roadmap/999002', pubDate: '', category: 'preview',
+      status: 'green', impact: 'low', serviceCategory: '', deadline: null, daysRemaining: null,
+      deadlineConfidence: null, deadlineEvidence: null, deadlinePrecision: null,
+      evidence: { tier: 'A', basis: 'roadmap', quote: '', sourceUrl: null },
+      source: 'm365-roadmap', namespace: 'entra-id', articleUrl: null, announcedDate: '2026-06-01',
+      announcements: [], dateConflict: false,
+      _roadmap: { roadmapId: 999002, statedStatus: 'In development', statedDateISO: '2026-06-30', statedDateDisplay: '2026-06' },
+    };
+    const trackedItem = {
+      id: 'tracked-2', title: 'Conditional Access support for legacy account recovery tools',
+      description: '', deadlineEvidence: null, deadline: null, announcedDate: '2026-06-01',
+      announcements: [], dateConflict: false,
+    };
+    const { items, subThreshold } = correlateRoadmapItems([roadmapItem, trackedItem], '2026-08-16T00:00:00.000Z');
+    // Not correlated -- both survive as separate, standalone items (the
+    // roadmap item publishes standalone, same as any uncorrelated roadmap
+    // item -- a near-miss is still a real tier-A roadmap item on its own).
+    assert.equal(items.length, 2);
+    assert.equal(items.find(i => i.id === 'tracked-2').announcements.length, 0);
+    assert.ok(items.every(i => i._roadmap === undefined), 'internal scratch field must never leak into public items, matched or not');
+    // Captured, side-band, for future evidence-driven threshold calibration.
+    assert.equal(subThreshold.length, 1);
+    assert.equal(subThreshold[0].roadmapId, 999002);
+    assert.equal(subThreshold[0].trackedItemId, 'tracked-2');
+    assert.equal(Math.round(subThreshold[0].score * 1000) / 1000, 0.667);
+    // The whole point of this test: the sub-threshold diagnostic record's
+    // own fields (score/dateGapMonths/capturedAt) never leak onto any
+    // public item object, matched or standalone.
+    for (const item of items) {
+      assert.equal(item.score, undefined);
+      assert.equal(item.dateGapMonths, undefined);
+      assert.equal(item.capturedAt, undefined);
+    }
+  });
+
+  test('uncorrelated real roadmap item (no plausible match among current tracked items) becomes a standalone tier-A item', () => {
+    const roadmapOnly = JSON.parse(loadRoadmapRawText('roadmap-real-subset.json')).filter(i => i.id === 568076);
+    const parsed = parseM365Roadmap(JSON.stringify(roadmapOnly));
+    const unrelatedTracked = {
+      id: 'tracked-3', title: 'Unrelated conditional access policy update', description: '',
+      deadlineEvidence: null, deadline: null, announcedDate: '2026-01-01', announcements: [], dateConflict: false,
+    };
+    const { items, subThreshold } = correlateRoadmapItems([...parsed, unrelatedTracked], '2026-08-16T00:00:00.000Z');
+    assert.equal(items.length, 2);
+    const standalone = items.find(i => i.source === 'm365-roadmap');
+    assert.ok(standalone);
+    assert.equal(standalone.evidence.tier, 'A');
+    assert.equal(standalone._roadmap, undefined);
+  });
+
+  test('dateConflict (constructed, disclosed): an exact-id match whose tracked deadline disagrees with the roadmap stated date sets the additive flag, never overwrites the deadline', () => {
+    const roadmapOnly = JSON.parse(loadRoadmapRawText('roadmap-real-subset.json')).filter(i => i.id === 518221);
+    const parsed = parseM365Roadmap(JSON.stringify(roadmapOnly));
+    const trackedItem = {
+      id: 'tracked-4', title: 'Cross tenant sync', description: 'References roadmap ID 518221 explicitly.',
+      deadlineEvidence: null, deadline: '2026-01-15', announcedDate: '2025-12-01', announcements: [], dateConflict: false,
+    };
+    const originalDeadline = trackedItem.deadline;
+    const { items } = correlateRoadmapItems([...parsed, trackedItem], '2026-08-16T00:00:00.000Z');
+    const result = items.find(i => i.id === 'tracked-4');
+    assert.equal(result.dateConflict, true);
+    assert.equal(result.deadline, originalDeadline, 'a roadmap date must never silently overwrite an existing deadline');
+    assert.equal(result.announcements[0].statedDate, '2026-04', 'both dates are recorded -- the roadmap side rides along in announcements[]');
+  });
+
+  test('no dateConflict when the tracked item has no deadline (a correlated item with only an announcedDate has nothing to conflict)', () => {
+    const roadmapOnly = JSON.parse(loadRoadmapRawText('roadmap-real-subset.json')).filter(i => i.id === 518221);
+    const parsed = parseM365Roadmap(JSON.stringify(roadmapOnly));
+    const trackedItem = {
+      id: 'tracked-5', title: 'Cross tenant sync', description: 'References roadmap ID 518221 explicitly.',
+      deadlineEvidence: null, deadline: null, announcedDate: '2025-12-01', announcements: [], dateConflict: false,
+    };
+    const { items } = correlateRoadmapItems([...parsed, trackedItem], '2026-08-16T00:00:00.000Z');
+    assert.equal(items.find(i => i.id === 'tracked-5').dateConflict, false);
+  });
+
+  test('non-fatal: a single malformed roadmap item (missing _roadmap) does not prevent other roadmap items in the same build from correlating or publishing', () => {
+    const roadmapOnly = JSON.parse(loadRoadmapRawText('roadmap-real-subset.json')).filter(i => i.id === 568076 || i.id === 518221);
+    const parsed = parseM365Roadmap(JSON.stringify(roadmapOnly));
+    // Corrupt one of the two parsed roadmap items the way a future API/parser
+    // mismatch plausibly could -- strip the scratch field a well-formed
+    // parser output always carries.
+    const corrupted = parsed.map(i => i.title.includes('Cross-tenant') ? { ...i, _roadmap: undefined } : i);
+    const trackedItem = {
+      id: 'tracked-6', title: 'Cross tenant group sync GA', description: 'References roadmap ID 518221.',
+      deadlineEvidence: null, deadline: null, announcedDate: '2026-05-01', announcements: [], dateConflict: false,
+    };
+
+    assert.doesNotThrow(() => {
+      const { items } = correlateRoadmapItems([...corrupted, trackedItem], '2026-08-16T00:00:00.000Z');
+      // The healthy roadmap item (568076, no plausible match here) still
+      // publishes standalone; the corrupted one still publishes too (just
+      // uncorrelated, since its own matching attempt failed safely); the
+      // tracked item is untouched (no announcement attached from the
+      // corrupted attempt).
+      assert.equal(items.length, 3);
+      assert.equal(items.find(i => i.id === 'tracked-6').announcements.length, 0);
+      assert.ok(items.every(i => i._roadmap === undefined));
+    });
+  });
+});
+
+describe('persistRoadmapCandidates (non-fatal KV write, Phase 5)', () => {
+  test('no ENTRA_CACHE -> resolves immediately, no error', async () => {
+    await assert.doesNotReject(persistRoadmapCandidates(undefined, [{ roadmapId: 1 }], '2026-08-16T00:00:00.000Z'));
+  });
+  test('empty candidate list -> no KV call at all', async () => {
+    let called = false;
+    const kv = { async get() { called = true; return null; }, async put() { called = true; } };
+    await persistRoadmapCandidates({ ENTRA_CACHE: kv }, [], '2026-08-16T00:00:00.000Z');
+    assert.equal(called, false);
+  });
+  test('a KV that throws on every call never propagates', async () => {
+    const throwingKV = { async get() { throw new Error('boom'); }, async put() { throw new Error('boom'); } };
+    await assert.doesNotReject(persistRoadmapCandidates({ ENTRA_CACHE: throwingKV }, [{ roadmapId: 1 }], '2026-08-16T00:00:00.000Z'));
+  });
+  test('merges with existing stored candidates and caps at 200, most-recent-first', async () => {
+    const existing = Array.from({ length: 199 }, (_, i) => ({ roadmapId: i }));
+    const kv = {
+      _store: new Map([[ROADMAP_CANDIDATES_KEY, JSON.stringify(existing)]]),
+      async get(key) { return this._store.has(key) ? this._store.get(key) : null; },
+      async put(key, value) { this._store.set(key, value); },
+    };
+    await persistRoadmapCandidates({ ENTRA_CACHE: kv }, [{ roadmapId: 'new-1' }, { roadmapId: 'new-2' }], '2026-08-16T00:00:00.000Z');
+    const stored = JSON.parse(kv._store.get(ROADMAP_CANDIDATES_KEY));
+    assert.equal(stored.length, 200);
+    assert.equal(stored[0].roadmapId, 'new-1');
+    assert.equal(stored[1].roadmapId, 'new-2');
+  });
+});
+
+// ── buildTrackerData integration (Phase 5) ──────────────────────────────────
+// Extends the Phase 3/4 mockFetchFor pattern with a 7th source. A roadmap
+// outage must degrade exactly like any other source's outage: the rest of
+// the feed stays intact, and a zero-count build must not poison the
+// roadmap source's own trailing baseline (Phase 4's small-N floor already
+// covers this -- roadmap's real trailing counts sit in the low double
+// digits, well under the floor).
+
+function mockFetchForWithRoadmap(roadmapResponder) {
+  return (url) => {
+    const u = String(url);
+    if (u === M365_ROADMAP_URL) return roadmapResponder(u);
+    return mockFetchFor(u);
+  };
+}
+
+describe('buildTrackerData (Phase 5): roadmap wired into the real pipeline', () => {
+  test('a roadmap fetch failure does not shrink or break the rest of the build, and is reported via errors[] like any other source', async (t) => {
+    const originalFetch = global.fetch;
+    t.after(() => { global.fetch = originalFetch; });
+    global.fetch = mockFetchForWithRoadmap(async () => ({ ok: false, status: 503, text: async () => '' }));
+
+    const data = await buildTrackerData([], {});
+    assert.equal(data.sources['m365-roadmap'], 0);
+    assert.ok((data.errors || []).some(e => e.startsWith('m365-roadmap:')));
+    // The rest of the envelope is exactly what mockFetchFor alone already
+    // produces -- a roadmap outage changes nothing else.
+    global.fetch = mockFetchFor;
+    const withoutRoadmapAtAll = await buildTrackerData([], {});
+    const strip = (d) => { const { lastUpdated, errors, sources, ...rest } = d; return rest; };
+    assert.deepEqual(strip(data), strip(withoutRoadmapAtAll));
+  });
+
+  test('a healthy roadmap fetch adds items to the envelope, additive-only (sources.m365-roadmap populated, everything else unchanged)', async (t) => {
+    const originalFetch = global.fetch;
+    t.after(() => { global.fetch = originalFetch; });
+    const roadmapJson = loadRoadmapRawText('roadmap-real-subset.json');
+    global.fetch = mockFetchForWithRoadmap(async () => ({ ok: true, text: async () => roadmapJson }));
+
+    const data = await buildTrackerData([], {});
+    assert.equal(data.sources['m365-roadmap'], 12);
+    assert.ok(data.items.some(i => i.source === 'm365-roadmap'));
+    assert.ok(data.items.every(i => Array.isArray(i.announcements)));
+    assert.ok(data.items.every(i => typeof i.dateConflict === 'boolean'));
+  });
+
+  test('m365-roadmap gets its own trailing health baseline -- a zero-count build does not poison it, matching every other source\'s guarantee', async (t) => {
+    const originalFetch = global.fetch;
+    t.after(() => { global.fetch = originalFetch; });
+    const roadmapJson = loadRoadmapRawText('roadmap-real-subset.json');
+    global.fetch = mockFetchForWithRoadmap(async () => ({ ok: true, text: async () => roadmapJson }));
+
+    const kv = { _store: new Map(), async get(k) { return this._store.has(k) ? this._store.get(k) : null; }, async put(k, v) { this._store.set(k, v); } };
+    // Build a healthy trailing baseline for m365-roadmap (>5 items clears the
+    // small-N exemption floor, so it's actually subject to the ratio test).
+    for (let i = 0; i < 7; i++) {
+      await buildTrackerData([], { ENTRA_CACHE: kv });
+    }
+    const beforeOutage = JSON.parse(kv._store.get(HEALTH_KEY));
+    assert.ok(beforeOutage.sources['m365-roadmap'].history.length > 0);
+
+    global.fetch = mockFetchForWithRoadmap(async () => ({ ok: false, status: 503, text: async () => '' }));
+    const outageBuild = await buildTrackerData([], { ENTRA_CACHE: kv });
+    assert.ok(outageBuild.degraded.includes('m365-roadmap'));
+
+    const afterOutage = JSON.parse(kv._store.get(HEALTH_KEY));
+    assert.deepEqual(afterOutage.sources['m365-roadmap'].history, beforeOutage.sources['m365-roadmap'].history,
+      'a degraded build must not extend/update its own trailing baseline');
+  });
+
+  test('API envelope is additive-only: new fields are announcements[]/dateConflict on items and m365-roadmap in sources{} -- nothing else changes shape', async (t) => {
+    const originalFetch = global.fetch;
+    t.after(() => { global.fetch = originalFetch; });
+    global.fetch = mockFetchForWithRoadmap(async () => ({ ok: false, status: 503, text: async () => '' }));
+    const data = await buildTrackerData([], {});
+    const envelopeKeys = Object.keys(data).sort();
+    assert.deepEqual(envelopeKeys, [
+      'coldStart', 'count', 'crossSourceMerged', 'dedupeDropped', 'degraded',
+      'errors', 'externalIdCount', 'items', 'lastUpdated', 'newCount',
+      'sources', 'unmatched', 'unmatchedSamples', 'warnings',
+    ].sort());
   });
 });

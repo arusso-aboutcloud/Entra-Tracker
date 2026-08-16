@@ -127,6 +127,68 @@
   byte-for-byte unchanged (only the additive `degraded`/`stale` fields added)
   whether the health-state KV read succeeds, fails, or the key doesn't exist yet.
 
+- [x] Microsoft 365 Roadmap source, conservatively correlated (Phase 5) -- adds
+  `https://www.microsoft.com/releasecommunications/api/v1/m365` as a 7th source
+  (label `m365-roadmap`). Real response shape and product-tag vocabulary
+  verified against a live call before writing any parsing code (not assumed):
+  a bare JSON array, `tagsContainer.products[].tagName === "Microsoft Entra"`
+  as the real identity product tag (12 of 1813 items at capture time),
+  `status` a 4-value enum (`Launched`/`In development`/`Rolling out`/
+  `Cancelled`, the last excluded outright), and month-precision dates
+  (`"<Month> CY<Year>"`). The product tag is only a cheap pre-filter --
+  every survivor still routes through the real Phase 2 taxonomy as the
+  scoping authority, same as every other source.
+  Correlation is deliberately conservative: this phase's own cautionary
+  example is the Phase 0.1 cross-source merge threshold (0.82), which has
+  never once fired against real data -- an unvalidated threshold that just
+  silently never engages. Two bases only: **`exact-id`** (the tracked
+  item's text explicitly references the roadmap feature id -- attaches
+  unconditionally), or **`strong-title-date`** (a new,
+  purpose-built `roadmapTitleSimilarity()` clears `0.75` **and** the
+  roadmap's stated date falls within 1 month of the tracked item's own
+  date). `roadmapTitleSimilarity()` is deliberately a separate function
+  from the existing `titleSimilarity()` (which backs the already-shipped
+  0.82/0.70 thresholds) -- reusing it naively would have understated a
+  real, genuine correlation pair (0.25 vs. 0.80 on the new function) due to
+  hyphen-handling and unstripped boilerplate words; see
+  `api/__fixtures__/roadmap/README.md` for the full real-pair validation.
+  A correlated roadmap item attaches to the matched item's new additive
+  `announcements: []` array rather than becoming its own card; an
+  uncorrelated-but-taxonomy-matched roadmap item becomes its own standalone
+  tier-A item. Every near-miss below the correlation bar is captured (not
+  asserted) in KV (`entra_tracker_roadmap_candidates_v1`, capped at 200,
+  diagnostic-only, never in the public API/UI) -- the mechanism that stops
+  the 0.82 problem from repeating: real match-quality data accumulates for
+  future evidence-driven recalibration instead of the bar being guessed at
+  twice. A new additive `dateConflict: true` fires when a correlated
+  roadmap entry's stated date disagrees (different month) with an
+  already-derived `deadline` from another source -- both dates are kept,
+  neither is silently picked, surfaced plainly in the UI as a genuine
+  disagreement between two official Microsoft channels rather than an
+  error to smooth over. Non-fatal and side-band throughout: correlation
+  runs with a per-roadmap-item try/catch (one malformed item can't cost
+  every *other* roadmap item its chance to correlate or publish in the
+  same build), and `m365-roadmap` gets its own Phase 4 trailing health
+  baseline -- a roadmap outage degrades exactly like any other source's,
+  and a zero-count build doesn't poison its own baseline. Verified against
+  a real live fetch through the actual production pipeline (not just
+  fixtures): 1813 total roadmap items -> 12 tag-filter survivors -> 12
+  taxonomy survivors (0 dropped) -> 0 exact-id + 1 strong-title-date
+  correlation (the real Cross-tenant-sync pair, confidence 0.8) -> 11
+  sub-threshold candidates captured (scores 0.167-0.571, all correctly
+  below the 0.75 bar) -> 7 standalone tier-A items after the existing
+  dateless-item retention horizon prunes the oldest 4 -> 0 dateConflicts,
+  0 errors, 0 degraded. API envelope confirmed additive-only: `announcements[]`/
+  `dateConflict` on items, `m365-roadmap` in `sources{}`, nothing else
+  changed shape. Frontend: roadmap entries render as a supplementary row on
+  the matched card (`exact-id` shown as a definite "Roadmap" tag,
+  `strong-title-date` hedged as "likely related", never presented with
+  equal certainty), `dateConflict` shown as a plain neutral badge, and
+  `/methodology` extended to explain the roadmap source, tier-A treatment,
+  what "likely related" means, and that Microsoft's own channels can
+  genuinely disagree on a date. 108 tests total (83 pre-existing
+  unaffected, 25 new).
+
 ## Planned
 
 - Cross-device On-radar sync via Cloudflare D1 + device token -- CONDITIONAL, only if

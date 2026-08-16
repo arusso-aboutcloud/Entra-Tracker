@@ -989,6 +989,49 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
   border-color: rgba(192,132,252,.3);
 }
 
+/* dateConflict badge (Phase 5): neutral, not alarming -- two official
+   Microsoft channels genuinely disagreeing is useful information, not an
+   error to apologise for. Amber-ish but deliberately duller than the i-medium
+   impact badge so it doesn't read as a severity signal. */
+.badge.i-dateconflict {
+  color: var(--yel);
+  background: var(--grey-bg);
+  border-color: var(--bdr);
+}
+
+/* Roadmap announcements (Phase 5) -- attached Microsoft 365 Roadmap entries
+   for an item. Visually a step down from the main entry body: smaller,
+   dimmer, clearly "supplementary official info" rather than a second
+   headline. */
+.entry-announcements {
+  margin: 0.5rem 0 0.65rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--bdr);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.announcement-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--fm);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.announcement-basis {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.68rem;
+}
+.announcement-basis.exact { color: var(--accent); }
+/* "Likely related" is a hedge, not a fact -- never styled to look as
+   confident as an exact-id match. Deliberately muted, not accent-colored. */
+.announcement-basis.likely { color: var(--dim); font-style: italic; }
+.announcement-row a.lnk { font-size: 0.72rem; }
+
 /* External ID filter button active state */
 .fbtn.ext-id-btn { color: #c084fc; border-color: rgba(192,132,252,.4); }
 .fbtn.ext-id-btn.active { background: rgba(192,132,252,.15); border-color: #c084fc; }
@@ -1421,6 +1464,13 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
 
         <div class="legend-item" style="grid-column: 1 / -1;">
           <div class="legend-item-header">
+            <span class="legend-badge-name" style="color:var(--text)">Microsoft 365 Roadmap</span>
+          </div>
+          <div class="legend-desc">Alongside the documentation and changelog sources above, the tracker also pulls Microsoft's own 365 Roadmap for items tagged "Microsoft Entra". Roadmap items carry structured Microsoft metadata (a feature id, a lifecycle status, a stated date), so they're treated as <span class="badge tier-a" style="vertical-align:middle">Tier A</span> like any other structured announcement. When a roadmap entry clearly matches something already being tracked, it's attached to that item as a supplementary "Roadmap" note rather than shown as a second, duplicate card — labelled with a definite "Roadmap" tag when the match is an explicit id reference, or hedged as "<em>likely related</em>" when it's based on title and date similarity instead (a hedge on purpose: similarity is a judgement call, not a fact, and this tracker would rather under-match than wrongly weld two different features together). Roadmap entries that don't clearly match anything already tracked become their own standalone card. Occasionally the roadmap states a different date for a feature than another Microsoft source does for the same item — both official channels, genuinely disagreeing — shown as a plain <span class="badge i-dateconflict" style="vertical-align:middle">&#9888; Dates disagree</span> flag rather than silently picking one. Neither date is hidden in that case.</div>
+        </div>
+
+        <div class="legend-item" style="grid-column: 1 / -1;">
+          <div class="legend-item-header">
             <span class="legend-badge-name" style="color:var(--text)">What this tracker covers</span>
           </div>
           <div class="legend-desc">Every item is matched against a single, fixed list of Entra and associated identity services — an item that doesn't match anything on this list isn't shown, on purpose, rather than left in as noise. Filter the feed by service area using the dropdown above the cards. Currently covered:</div>
@@ -1484,6 +1534,8 @@ details[open] .legend-toggle-icon { transform: rotate(180deg); }
       <a href="https://learn.microsoft.com/en-us/azure/active-directory-b2c/whats-new-docs" target="_blank">B2C Docs</a>
       ·
       <a href="https://github.com/MicrosoftDocs/entra-docs/commits/main/docs/external-id/customers" target="_blank">External ID Commits</a>
+      ·
+      <a href="https://www.microsoft.com/en-us/microsoft-365/roadmap?filters=Microsoft%20Entra" target="_blank">M365 Roadmap</a>
     </div>
     <div class="footer-text">
       Built by <a href="https://blog.aboutcloud.io" target="_blank">AboutCloud.io</a>
@@ -1737,6 +1789,27 @@ function cdHTML(item){
   return '';
 }
 
+// Roadmap announcements (Phase 5): render each attached entry as its own
+// row. exact-id is shown as a definite fact ("Roadmap"); strong-title-date
+// is explicitly hedged ("likely related") -- it's a similarity match, never
+// presented with the same certainty as an id reference. statedDate is
+// month-precision, exactly as the roadmap gives it -- never padded into a
+// fake day-of-month.
+function announcementsHTML(item){
+  if(!item.announcements || !item.announcements.length) return '';
+  const rows = item.announcements.map(a => {
+    const isExact = a.matchBasis === 'exact-id';
+    const basisLabel = isExact
+      ? `<span class="announcement-basis exact">Roadmap</span>`
+      : `<span class="announcement-basis likely" title="Matched by title/date similarity, not an explicit reference -- treat as a hint, not a fact">likely related</span>`;
+    const statusTxt = a.statedStatus ? `Roadmap status: ${esc(a.statedStatus)}` : '';
+    const dateTxt   = a.statedDate   ? `stated ${esc(a.statedDate)}` : '';
+    const link      = a.url ? `<a class="lnk" href="${esc(a.url)}" target="_blank" rel="noopener">Roadmap entry &#8599;</a>` : '';
+    return `<div class="announcement-row">${basisLabel} ${statusTxt}${statusTxt&&dateTxt?', ':''}${dateTxt} ${link}</div>`;
+  }).join('');
+  return `<div class="entry-announcements">${rows}</div>`;
+}
+
 function entryHTML(item){
   const art      = (item.title ? findArt(item.title) : null) || item.articleUrl;
   const ms       = item.link ? `<a class="lnk" href="${esc(item.link)}" target="_blank" rel="noopener">MS Docs &#8599;</a>` : '';
@@ -1746,6 +1819,14 @@ function entryHTML(item){
   const tenantBadge = affected ? `<span class="badge i-tenant">&#127919; Affects your tenant</span>` : '';
   const extIdBadge  = item.namespace === 'external-id' ? `<span class="badge i-external-id">&#x1F7E3; External ID</span>` : '';
   const newBadge    = isRecentlyNew(item, coldStart) ? `<span class="badge i-new-recent">&#10024; Just added</span>` : '';
+  // dateConflict (Phase 5): the roadmap and another Microsoft source
+  // genuinely disagree on a date for the same item -- shown plainly, not
+  // smoothed over. Neither date is hidden; both remain visible (the
+  // existing deadline above, the roadmap's own stated date in the
+  // announcements row below).
+  const dateConflictBadge = item.dateConflict
+    ? `<span class="badge i-dateconflict" title="Microsoft's roadmap states a different date than the source this deadline came from -- see the roadmap entry below">&#9888; Dates disagree</span>`
+    : '';
   // Evidence tier: how strong Microsoft's own signal was. Absent on items
   // loaded from a pre-Phase-1 cache snapshot -- omit the badge rather than
   // show a misleading "unknown tier".
@@ -1761,12 +1842,14 @@ function entryHTML(item){
     <div class="entry-body">
       <div class="entry-title">${esc(item.title)}</div>
       <div class="entry-desc">${esc(item.description||'')}</div>
+      ${announcementsHTML(item)}
       <div class="entry-meta">
         ${newBadge}
         <span class="badge c-${item.category}">${catLabel(item.category)}</span>
         <span class="badge i-${item.impact}">${impLabel(item.impact)}</span>
         ${tierBadge}
         ${extIdBadge}
+        ${dateConflictBadge}
         ${tenantBadge}
         ${ms}${ar}
         ${radarBtn}
@@ -2068,6 +2151,7 @@ const SOURCE_DISPLAY_NAMES = {
   'b2c-docs':            'B2C Docs',
   'external-id-commits': 'External ID Commits',
   'graph-changelog':     'Graph Changelog',
+  'm365-roadmap':        'M365 Roadmap',
 };
 function sourceDisplayName(id) { return SOURCE_DISPLAY_NAMES[id] || id; }
 
