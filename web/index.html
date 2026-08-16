@@ -82,12 +82,14 @@ body {
    hero subtitle, the "live" dot, the subscribe button, all six stat-number
    glows) was removed outright for this redesign -- forever-looping
    decoration reads as "this page is alive," which undercuts a tool whose
-   whole value is trustworthy signal. Urgency is carried by colour and
-   weight everywhere else on the page. The hero title's glow (below) is a
-   deliberate, requested exception -- restored by explicit request as a
-   brand/identity flourish on the page's own name, not a signal about the
-   data, so it doesn't reintroduce the ambient-motion problem this
-   redesign otherwise fixes. */
+   whole value is trustworthy signal. The hero title's glow and the stat-
+   number/External-ID-count glows (below) are deliberate, explicitly
+   requested exceptions -- brand/aesthetic flourish on the dashboard's own
+   numerals and name, layered on top of colour/value, which is still what
+   actually carries the urgency signal. Restoring these two doesn't
+   reintroduce the ambient "ordinary card content pulsing forever" problem
+   this redesign otherwise fixes -- per-item countdowns, badges, and the
+   entry list itself stay glow-free. */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes card-in {
   from { opacity: 0; transform: translateY(4px); }
@@ -97,6 +99,17 @@ body {
   0%, 100% { text-shadow: 0 0 8px rgba(230,237,243,0.95), 0 0 22px rgba(230,237,243,0.65), 0 0 50px rgba(230,237,243,0.3); }
   50%       { text-shadow: 0 0 4px rgba(230,237,243,0.45), 0 0 10px rgba(230,237,243,0.2),  0 0 22px rgba(230,237,243,0.08); }
 }
+/* Stat-number glows -- restored by the same explicit request as the hero
+   title above (same reasoning: a colour/identity flourish on the
+   dashboard's own numerals, not a signal layered onto the data itself --
+   the numbers' VALUES and colours already carry the real signal; the glow
+   is purely aesthetic on top of that, same as the title). */
+@keyframes sn-glow-red  { 0%,100%{text-shadow:0 0 6px rgba(255,123,114,1.0),0 0 18px rgba(255,123,114,0.85),0 0 45px rgba(255,123,114,0.5),0 0 70px rgba(255,123,114,0.2)} 50%{text-shadow:0 0 4px rgba(255,123,114,0.45),0 0 12px rgba(255,123,114,0.15)} }
+@keyframes sn-glow-yel  { 0%,100%{text-shadow:0 0 6px rgba(227,179,65,1.0), 0 0 18px rgba(227,179,65,0.85), 0 0 45px rgba(227,179,65,0.5), 0 0 70px rgba(227,179,65,0.2)}  50%{text-shadow:0 0 4px rgba(227,179,65,0.45), 0 0 12px rgba(227,179,65,0.15)} }
+@keyframes sn-glow-grn  { 0%,100%{text-shadow:0 0 6px rgba(63,185,80,1.0),  0 0 18px rgba(63,185,80,0.85),  0 0 45px rgba(63,185,80,0.5),  0 0 70px rgba(63,185,80,0.2)}   50%{text-shadow:0 0 4px rgba(63,185,80,0.45),  0 0 12px rgba(63,185,80,0.15)} }
+@keyframes sn-glow-grey { 0%,100%{text-shadow:0 0 6px rgba(139,148,158,0.95),0 0 18px rgba(139,148,158,0.7), 0 0 40px rgba(139,148,158,0.4), 0 0 65px rgba(139,148,158,0.15)} 50%{text-shadow:0 0 4px rgba(139,148,158,0.35),0 0 10px rgba(139,148,158,0.1)} }
+@keyframes sn-glow-blue { 0%,100%{text-shadow:0 0 6px rgba(88,166,255,1.0), 0 0 18px rgba(88,166,255,0.85), 0 0 45px rgba(88,166,255,0.5), 0 0 70px rgba(88,166,255,0.2)}  50%{text-shadow:0 0 4px rgba(88,166,255,0.45), 0 0 12px rgba(88,166,255,0.15)} }
+@keyframes sn-glow-purp { 0%,100%{text-shadow:0 0 6px rgba(192,132,252,1.0),0 0 18px rgba(192,132,252,0.85),0 0 45px rgba(192,132,252,0.5),0 0 70px rgba(192,132,252,0.2)} 50%{text-shadow:0 0 4px rgba(192,132,252,0.45),0 0 12px rgba(192,132,252,0.15)} }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
@@ -311,11 +324,11 @@ nav a.active { color: var(--accent); font-weight: 600; }
   font-variant-numeric: tabular-nums;
   margin-bottom: 0.4rem;
 }
-.stat-card.s-red  .stat-num { color: var(--red); }
-.stat-card.s-yel  .stat-num { color: var(--yel); }
-.stat-card.s-grn  .stat-num { color: var(--grn); }
-.stat-card.s-grey .stat-num { color: var(--text-muted); }
-.stat-card.s-blue .stat-num { color: var(--accent); }
+.stat-card.s-red  .stat-num { color: var(--red);       animation: sn-glow-red  3s ease-in-out infinite; }
+.stat-card.s-yel  .stat-num { color: var(--yel);       animation: sn-glow-yel  3s ease-in-out infinite 0.3s; }
+.stat-card.s-grn  .stat-num { color: var(--grn);       animation: sn-glow-grn  3s ease-in-out infinite 0.6s; }
+.stat-card.s-grey .stat-num { color: var(--text-muted); animation: sn-glow-grey 3s ease-in-out infinite 0.9s; }
+.stat-card.s-blue .stat-num { color: var(--accent);    animation: sn-glow-blue 3s ease-in-out infinite; }
 .stat-lbl {
   font-family: var(--fm);
   font-size: 0.8rem;
@@ -342,6 +355,7 @@ nav a.active { color: var(--accent); font-weight: 600; }
   font-family: var(--fd);
   font-size: 2.7rem; font-weight: 700; line-height: 1;
   color: #c084fc; font-variant-numeric: tabular-nums; white-space: nowrap;
+  animation: sn-glow-purp 3s ease-in-out infinite;
 }
 .extid-meta { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
 .extid-label {
