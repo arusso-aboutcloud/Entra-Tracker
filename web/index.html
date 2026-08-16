@@ -80,14 +80,22 @@ body {
         filter change is felt, not just read. Nothing here loops forever.
    Every infinite glow/pulse animation from the previous design (hero title,
    hero subtitle, the "live" dot, the subscribe button, all six stat-number
-   glows) has been removed outright -- not just unbound, deleted -- because
-   forever-looping decoration reads as "this page is alive," which undercuts
-   a tool whose whole value is trustworthy signal. Urgency is carried by
-   colour and weight now, not motion. */
+   glows) was removed outright for this redesign -- forever-looping
+   decoration reads as "this page is alive," which undercuts a tool whose
+   whole value is trustworthy signal. Urgency is carried by colour and
+   weight everywhere else on the page. The hero title's glow (below) is a
+   deliberate, requested exception -- restored by explicit request as a
+   brand/identity flourish on the page's own name, not a signal about the
+   data, so it doesn't reintroduce the ambient-motion problem this
+   redesign otherwise fixes. */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes card-in {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes tracker-title-glow {
+  0%, 100% { text-shadow: 0 0 8px rgba(230,237,243,0.95), 0 0 22px rgba(230,237,243,0.65), 0 0 50px rgba(230,237,243,0.3); }
+  50%       { text-shadow: 0 0 4px rgba(230,237,243,0.45), 0 0 10px rgba(230,237,243,0.2),  0 0 22px rgba(230,237,243,0.08); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
@@ -166,10 +174,11 @@ nav a.active { color: var(--accent); font-weight: 600; }
   color: var(--text);
   line-height: 1.1;
   margin-bottom: 0.3rem;
+  animation: tracker-title-glow 3s ease-in-out infinite;
 }
 
 .hero-sub {
-  font-family: var(--fm);
+  font-family: var(--fd);
   font-size: 1.2rem;
   color: var(--text-muted);
 }
@@ -940,7 +949,7 @@ details[open] > .entry-summary .entry-caret { transform: rotate(180deg); }
     <div class="hero-left">
       <div>
         <div class="hero-title">Entra Change Tracker</div>
-        <div class="hero-sub">Live feed — retirements, breaking changes &amp; previews</div>
+        <div class="hero-sub">Retirements, breaking changes, previews &amp; roadmap items, tracked live with deadline history</div>
       </div>
     </div>
     <div class="hero-right">
