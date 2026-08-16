@@ -24,6 +24,10 @@ import {
   matchesAnyTaxonomyEntry,
   routeThroughTaxonomy,
   isExternalId,
+  REVISION_FIELD_COLUMNS,
+  revisionContentHash,
+  writeRevisions,
+  buildTrackerData,
 } from './worker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -538,5 +542,178 @@ describe('routeThroughTaxonomy (drop counting and sample cap)', () => {
     const { unmatched, unmatchedSamples } = routeThroughTaxonomy(items);
     assert.equal(unmatched['entra-whatsnew-md'], 15);
     assert.equal(unmatchedSamples.length, 10);
+  });
+});
+
+// ── REVISION STORE (Phase 3, write-path only) ────────────────────────────────
+
+// A minimal, tightly-scoped fake D1Database -- only understands the exact
+// two query shapes writeRevisions() issues (see api/worker.js): a bind-less
+// SELECT of the latest-per-item_id rows, and bound INSERT statements passed
+// to batch(). Not a general SQL engine.
+function makeFakeD1(existingRows) {
+  const rows = existingRows ? existingRows.map(r => ({ ...r })) : [];
+  const batchCallSizes = [];
+  return {
+    _rows: rows,
+    _batchCallSizes: batchCallSizes,
+    prepare(sql) {
+      return {
+        async all() {
+          if (/^SELECT/i.test(sql.trim())) return { results: rows.map(r => ({ ...r })) };
+          return { results: [] };
+        },
+        bind(...args) { return { _args: args }; },
+      };
+    },
+    async batch(stmts) {
+      batchCallSizes.push(stmts.length);
+      for (const s of stmts) {
+        const [item_id, observed_at, content_hash, title, category, status, deadline, deadline_confidence, announced_date, service_category, changed_fields] = s._args;
+        const row = { item_id, observed_at, content_hash, title, category, status, deadline, deadline_confidence, announced_date, service_category, changed_fields };
+        const idx = rows.findIndex(r => r.item_id === item_id);
+        if (idx >= 0) rows[idx] = row; else rows.push(row);
+      }
+      return stmts.map(() => ({ success: true }));
+    },
+  };
+}
+
+function makeThrowingD1() {
+  return {
+    prepare() { throw new Error('D1 connection failed (simulated)'); },
+    async batch() { throw new Error('D1 batch failed (simulated)'); },
+  };
+}
+
+// Item-level (not raw-payload) fixtures, disclosed per the standing rule:
+// hashing/diffing runs entirely on already-parsed item objects, not on
+// Microsoft's source text, so there's nothing "real" to capture here --
+// same justification as Phase 0.1's dedupe fixtures. The revision store's
+// logic was separately verified against a REAL fresh 5-source fetch, piped
+// through the real parsers/taxonomy/dedupe, and written to the actual
+// production D1 database (12 real items, first build 12 rows, confirmed
+// second build 0 rows) -- see the PR description for that run's numbers.
+const REV_ITEM_A = { id: 'aaaa1111', title: 'Item A', category: 'breaking', status: 'yellow', deadline: '2026-05-01', deadlineConfidence: 'stated', announcedDate: '2026-03-01', serviceCategory: 'Conditional Access' };
+const REV_ITEM_B = { id: 'bbbb2222', title: 'Item B', category: 'new_feature', status: 'green', deadline: null, deadlineConfidence: null, announcedDate: '2026-04-01', serviceCategory: 'Entra ID (workforce)' };
+
+describe('revisionContentHash', () => {
+  test('only depends on the tracked fields, not e.g. daysRemaining/firstSeen', () => {
+    const a = { ...REV_ITEM_A, daysRemaining: 47, firstSeen: '2026-01-01' };
+    const b = { ...REV_ITEM_A, daysRemaining: 12, firstSeen: '2026-06-01' };
+    assert.equal(revisionContentHash(a), revisionContentHash(b));
+  });
+
+  test('changes when a tracked field changes', () => {
+    const a = revisionContentHash(REV_ITEM_A);
+    const b = revisionContentHash({ ...REV_ITEM_A, status: 'red' });
+    assert.notEqual(a, b);
+  });
+});
+
+describe('writeRevisions (non-fatal contract + change-only writes)', () => {
+  test('no env.TRACKER_DB binding -> resolves immediately, no error', async () => {
+    await assert.doesNotReject(writeRevisions(undefined, [REV_ITEM_A], '2026-08-16T00:00:00.000Z'));
+    await assert.doesNotReject(writeRevisions({}, [REV_ITEM_A], '2026-08-16T00:00:00.000Z'));
+  });
+
+  test('a D1 that throws on every call never propagates -- the build must survive a D1 outage', async () => {
+    const throwing = makeThrowingD1();
+    await assert.doesNotReject(writeRevisions({ TRACKER_DB: throwing }, [REV_ITEM_A, REV_ITEM_B], '2026-08-16T00:00:00.000Z'));
+  });
+
+  test('first-ever build (empty table): every item gets a baseline row, changed_fields is empty', async () => {
+    const db = makeFakeD1([]);
+    await writeRevisions({ TRACKER_DB: db }, [REV_ITEM_A, REV_ITEM_B], '2026-08-16T00:00:00.000Z');
+    assert.deepEqual(db._batchCallSizes, [2]); // one batch call, 2 rows
+    assert.equal(db._rows.length, 2);
+    for (const row of db._rows) assert.deepEqual(JSON.parse(row.changed_fields), []);
+  });
+
+  test('a second build with IDENTICAL content writes nothing (no batch call at all)', async () => {
+    const db = makeFakeD1([]);
+    await writeRevisions({ TRACKER_DB: db }, [REV_ITEM_A, REV_ITEM_B], '2026-08-16T00:00:00.000Z');
+    await writeRevisions({ TRACKER_DB: db }, [REV_ITEM_A, REV_ITEM_B], '2026-08-16T04:00:00.000Z');
+    assert.deepEqual(db._batchCallSizes, [2]); // still just the one batch call from the first build
+    assert.equal(db._rows.length, 2);
+  });
+
+  test('a build where only one item changed writes exactly one row, with changed_fields naming what changed', async () => {
+    const db = makeFakeD1([]);
+    await writeRevisions({ TRACKER_DB: db }, [REV_ITEM_A, REV_ITEM_B], '2026-08-16T00:00:00.000Z');
+    const changedA = { ...REV_ITEM_A, status: 'red', deadline: '2026-04-15' };
+    await writeRevisions({ TRACKER_DB: db }, [changedA, REV_ITEM_B], '2026-08-16T04:00:00.000Z');
+    assert.deepEqual(db._batchCallSizes, [2, 1]); // second build only wrote 1 row
+    const latestA = db._rows.find(r => r.item_id === REV_ITEM_A.id);
+    assert.deepEqual(JSON.parse(latestA.changed_fields).sort(), ['deadline', 'status']);
+    assert.equal(latestA.observed_at, '2026-08-16T04:00:00.000Z');
+  });
+
+  test('KV cold start does not force a revision-store write storm: D1 already recognises unchanged item_ids from a prior build', async () => {
+    // Simulates the scenario the work order specifically asks about: D1's
+    // OWN history (not KV's coldStart flag) is what determines whether a
+    // write happens. Seed D1 as if a prior build already ran (a real
+    // "previous build" recorded via the same code path, not hand-built --
+    // reuses writeRevisions itself to seed it), then simulate a KV cold
+    // start (irrelevant to D1) re-observing the exact same items.
+    const db = makeFakeD1([]);
+    await writeRevisions({ TRACKER_DB: db }, [REV_ITEM_A, REV_ITEM_B], '2026-08-16T00:00:00.000Z');
+    // "KV cold start" only affects firstSeen/isNew seeding in applyDiff, not
+    // the item content itself -- the revision store only ever sees content.
+    await writeRevisions({ TRACKER_DB: db }, [REV_ITEM_A, REV_ITEM_B], '2026-08-16T20:00:00.000Z');
+    assert.deepEqual(db._batchCallSizes, [2]); // no second baseline storm
+  });
+});
+
+describe('buildTrackerData: API envelope is byte-for-byte unchanged regardless of D1 presence/success/failure', () => {
+  const WHATS_NEW_FIXTURE = [
+    '## March 2026',
+    '',
+    '### Plan for change - Test Entry For Revision Store',
+    '',
+    '**Type:** Plan for change',
+    '**Service category:** Conditional Access',
+    '',
+    'This entry will be retired on May 1, 2026.',
+    '',
+    '---',
+    '',
+  ].join('\n');
+
+  function mockFetchFor(url) {
+    const u = String(url);
+    const ok = (body) => Promise.resolve({ ok: true, text: async () => body });
+    if (u.includes('whats-new.md')) return ok(WHATS_NEW_FIXTURE);
+    if (u.includes('fslogix')) return ok('<html></html>');
+    if (u.includes('external-id/whats-new-docs.md')) return ok('');
+    if (u.includes('active-directory-b2c/whats-new-docs.md')) return ok('');
+    if (u.includes('commits?path=')) return ok('[]');
+    if (u.includes('graph/changelog')) return ok('<rss><channel></channel></rss>');
+    return Promise.resolve({ ok: false, status: 404, text: async () => '' });
+  }
+
+  test('identical envelope (aside from the live lastUpdated timestamp) with no D1, a working D1, and a failing D1', async (t) => {
+    const originalFetch = global.fetch;
+    t.after(() => { global.fetch = originalFetch; });
+    global.fetch = mockFetchFor;
+
+    const noD1     = await buildTrackerData([], {});
+    const workingD1 = makeFakeD1([]);
+    const withD1    = await buildTrackerData([], { TRACKER_DB: workingD1 });
+    const throwD1   = await buildTrackerData([], { TRACKER_DB: makeThrowingD1() });
+
+    const strip = (data) => { const { lastUpdated, ...rest } = data; return rest; };
+    assert.deepEqual(strip(noD1), strip(withD1));
+    assert.deepEqual(strip(noD1), strip(throwD1));
+
+    // Confirm the working-D1 run actually wrote something (the test isn't
+    // vacuous -- D1 really did receive the item set and record a revision).
+    assert.ok(workingD1._batchCallSizes.length > 0, 'expected the revision store to actually write on a real first build');
+
+    // Confirm no D1-related text leaked into the envelope in any scenario.
+    for (const data of [noD1, withD1, throwD1]) {
+      assert.equal(JSON.stringify(data).toLowerCase().includes('d1'), false);
+      assert.equal(JSON.stringify(data).toLowerCase().includes('tracker_db'), false);
+    }
   });
 });

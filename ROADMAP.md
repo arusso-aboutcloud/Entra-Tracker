@@ -76,6 +76,27 @@
   statement -- the README previously advertised "service category pills" that, on
   inspection, did not exist in the code; this is the actual first implementation,
   flagged as a correction rather than silently built over the stale claim.
+- [x] D1 revision store, write-path only (Phase 3) -- lands early on purpose:
+  deadline-slip history can't be reconstructed retroactively, so recording starts
+  now even though nothing reads it until Phase 4/5. New D1 database
+  `entra-tracker-history` (binding `TRACKER_DB`), one `item_revisions` table
+  (`api/migrations/0001_create_item_revisions.sql`). On each build, a row is
+  inserted only when an item's tracked fields (title/category/status/deadline/
+  deadlineConfidence/announcedDate/serviceCategory) actually changed since its
+  last stored revision -- unchanged items write nothing, and `changed_fields`
+  records what did. Strictly non-fatal: every D1 access is wrapped so a failure
+  can never touch the KV write or the API response, and diagnostics go to the
+  console log only, never into `warnings[]`, so the envelope stays byte-for-byte
+  unchanged in every scenario -- proved with a dedicated test that runs a full
+  build against a D1 binding that throws on every call. No read endpoint, no
+  frontend change, no API response change -- deliberately out of scope this phase.
+  Verified against a real fetch, piped through the real parsers/taxonomy/dedupe,
+  written to the actual production D1: 12 real items -> 12 rows on the first
+  build, confirmed 0 new rows on an identical second build. Also caught and
+  fixed a real edge case live: the initial latest-revision query tiebroke on
+  `observed_at`, which isn't guaranteed unique (a dropped-connection retry
+  during testing produced two rows sharing a timestamp) -- switched to the
+  autoincrement `id` column, which is.
 
 ## Planned
 

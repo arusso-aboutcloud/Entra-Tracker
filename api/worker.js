@@ -1563,8 +1563,98 @@ async function probeCandidateFeeds(warnings) {
   }
 }
 
+// ── REVISION STORE (Phase 3, write-path only) ────────────────────────────────
+// D1 is side-band history: nothing reads it yet (Phase 4/5 will). Every
+// access here is wrapped so a D1 outage -- connection failure, migration
+// drift, constraint violation, timeout -- can NEVER prevent the KV write,
+// alter the API response, or throw out of the caller. Diagnostics go to
+// console.error only, never into the response's warnings[] array: the work
+// order requires the API envelope to be byte-for-byte unchanged this phase,
+// success or failure, and warnings[] is part of that envelope.
+
+// JS item field name -> D1 column name for the fields this store tracks.
+// daysRemaining/firstSeen/etc are deliberately excluded -- they change on
+// their own every build (a countdown ticking down) without the item having
+// actually changed; a "revision" should mean something Microsoft changed.
+const REVISION_FIELD_COLUMNS = {
+  title:              'title',
+  category:           'category',
+  status:             'status',
+  deadline:           'deadline',
+  deadlineConfidence: 'deadline_confidence',
+  announcedDate:      'announced_date',
+  serviceCategory:    'service_category',
+};
+
+function revisionContentHash(item) {
+  const parts = Object.keys(REVISION_FIELD_COLUMNS).map(f => String(item[f] ?? ''));
+  return fnv1a(parts.join('|'));
+}
+
+// Writes one row per item whose tracked-field content actually changed
+// since its last stored revision (or has none yet); unchanged items write
+// nothing. Two D1 round trips regardless of item count: one SELECT for
+// every item_id's latest revision, one batched INSERT for the changed/new
+// ones (D1's own batch() API, not the MCP-tool one-request limitation that
+// applies only to provisioning this database, not to the deployed Worker).
+//
+// Cold-start note (required by the work order): this does NOT special-case
+// KV's `coldStart` flag, and doesn't need to. D1 is its own persistent
+// record, independent of the KV cache -- if KV goes cold (TTL lapse, bad
+// deploy) but D1 still has prior revisions for these item_ids, unchanged
+// items still write nothing; only genuinely new-or-changed items do. The
+// only scenario that writes a full-corpus baseline is D1's OWN first-ever
+// build (a freshly migrated, empty item_revisions table), which is the
+// explicitly-accepted one-time baseline -- it cannot repeat on a later KV
+// cold start, because by then D1 already has rows for those item_ids.
+async function writeRevisions(env, items, observedAtISO) {
+  if (!env || !env.TRACKER_DB) return;
+  try {
+    const cols = Object.values(REVISION_FIELD_COLUMNS).join(', ');
+    // Tiebreak on the autoincrement PK (id), not observed_at: two rows CAN
+    // share an observed_at (verified live -- a retried write after a
+    // dropped connection produced exactly this), and id is the only column
+    // guaranteed unique and monotonically insertion-ordered, so MAX(id)
+    // always resolves to exactly one row per item_id.
+    const { results: latest } = await env.TRACKER_DB.prepare(
+      `SELECT item_id, content_hash, ${cols} FROM item_revisions
+       WHERE id = (SELECT MAX(id) FROM item_revisions r2 WHERE r2.item_id = item_revisions.item_id)`
+    ).all();
+
+    const latestByItemId = new Map(latest.map(r => [r.item_id, r]));
+    const inserts = [];
+
+    for (const item of items) {
+      const hash = revisionContentHash(item);
+      const prev = latestByItemId.get(item.id);
+      if (prev && prev.content_hash === hash) continue; // unchanged -- write nothing
+
+      const changedFields = prev
+        ? Object.entries(REVISION_FIELD_COLUMNS)
+            .filter(([jsField, col]) => String(item[jsField] ?? '') !== String(prev[col] ?? ''))
+            .map(([jsField]) => jsField)
+        : []; // no prior revision -- baseline, nothing to diff against
+
+      inserts.push(env.TRACKER_DB.prepare(
+        `INSERT INTO item_revisions (item_id, observed_at, content_hash, ${cols}, changed_fields)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        item.id, observedAtISO, hash,
+        item.title ?? null, item.category ?? null, item.status ?? null,
+        item.deadline ?? null, item.deadlineConfidence ?? null,
+        item.announcedDate ?? null, item.serviceCategory ?? null,
+        JSON.stringify(changedFields),
+      ));
+    }
+
+    if (inserts.length) await env.TRACKER_DB.batch(inserts);
+  } catch (e) {
+    console.error('revision-store (non-fatal):', e && e.message);
+  }
+}
+
 // ── BUILD FULL DATASET ─────────────────────────────────────────────────────
-async function buildTrackerData(prevItems) {
+async function buildTrackerData(prevItems, env) {
   let allItems = [];
   const errors   = [];
   const warnings = [];
@@ -1715,8 +1805,17 @@ async function buildTrackerData(prevItems) {
 
   const externalIdCount = diffed.filter(i => i.namespace === 'external-id').length;
 
+  const lastUpdated = new Date().toISOString();
+
+  // Revision store write (Phase 3, side-band, non-fatal -- see
+  // writeRevisions()'s own comment). Item set is fully finalised here:
+  // post-dedupe, post-taxonomy, post-retention, post-diff. Never awaited in
+  // a way that could throw past this point -- writeRevisions swallows its
+  // own errors internally.
+  await writeRevisions(env, diffed, lastUpdated);
+
   return {
-    lastUpdated:    new Date().toISOString(),
+    lastUpdated,
     count:          diffed.length,
     externalIdCount,
     newCount,
@@ -1845,7 +1944,7 @@ export default {
     }
 
     try {
-      const data = await buildTrackerData(prevItems);
+      const data = await buildTrackerData(prevItems, env);
       const json = JSON.stringify(data, null, 2);
 
       if (env.ENTRA_CACHE) {
@@ -1903,7 +2002,7 @@ export default {
             if (old) prevItems = (JSON.parse(old).items) || [];
           } catch (e) { console.error('prev read:', e.message); }
         }
-        const data = await buildTrackerData(prevItems);
+        const data = await buildTrackerData(prevItems, env);
         const json = JSON.stringify(data, null, 2);
         if (env.ENTRA_CACHE) {
           await env.ENTRA_CACHE.put(CACHE_KEY, json, { expirationTtl: KV_RETENTION_SECONDS });
@@ -1948,4 +2047,8 @@ export {
   matchesAnyTaxonomyEntry,
   routeThroughTaxonomy,
   isExternalId,
+  REVISION_FIELD_COLUMNS,
+  revisionContentHash,
+  writeRevisions,
+  buildTrackerData,
 };

@@ -10,5 +10,14 @@ crons = ["0 */4 * * *"]
 binding = "ENTRA_CACHE"
 id = "7f7ec741df00421cbdefc462630c7b75"
 
+# Created in Phase 3 (revision-store work order) via the Cloudflare MCP:
+# `entra-tracker-history`, database_id 2fa8bcf3-1180-45dc-b866-93abfbd00c54,
+# created 2026-08-16. Write-path only -- see api/migrations/ and
+# routeThroughRevisionStore() in worker.js. No read endpoints consume it yet.
+[[d1_databases]]
+binding = "TRACKER_DB"
+database_name = "entra-tracker-history"
+database_id = "2fa8bcf3-1180-45dc-b866-93abfbd00c54"
+
 [observability]
 enabled = true

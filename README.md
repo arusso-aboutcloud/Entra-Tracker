@@ -68,6 +68,7 @@ This repository is continuously scanned by [Trivy](https://trivy.dev/) on every 
 | Name | Type | Details |
 |---|---|---|
 | `ENTRA_CACHE` | KV Namespace | Single-key cache of parsed articles + metadata |
+| `TRACKER_DB` | D1 Database | `entra-tracker-history`, write-only revision history (Phase 3) — see below |
 
 **Cron Trigger:** Every 4 hours -- scrapes all 5 sources in parallel and refreshes KV.
 
@@ -105,6 +106,23 @@ new logic took over.
 ### KV: `ENTRA_CACHE`
 
 **Key:** `entra_tracker_v3` — single-key storage containing all parsed articles and metadata.
+
+### D1: `entra-tracker-history` (binding `TRACKER_DB`)
+
+**This is a write-only, side-band history store — there is no read endpoint for it, and that's not a gap to fill by accident.** Nothing in the API response or the frontend reads from it as of Phase 3. It exists purely so deadline-slip history *starts accumulating now*, because it can't be reconstructed retroactively — Phase 4/5 will eventually read it.
+
+| Property | Value |
+|---|---|
+| Database name | `entra-tracker-history` |
+| Database ID | `2fa8bcf3-1180-45dc-b866-93abfbd00c54` |
+| Created | 2026-08-16, via the Cloudflare API (D1 database creation), Phase 3 |
+| Schema | `api/migrations/0001_create_item_revisions.sql` — one `item_revisions` table |
+
+**What it records:** on each build, after the item set is fully finalised (post-dedupe, post-taxonomy), every item's tracked fields (`title`, `category`, `status`, `deadline`, `deadlineConfidence`, `announcedDate`, `serviceCategory`) are hashed. A row is inserted only when that hash differs from the item's most recently stored revision (or it has none yet) — unchanged items write nothing. Each inserted row also records `changed_fields`: which of the tracked fields actually differ from the prior revision.
+
+**Non-fatal by design:** every D1 access is wrapped so a failure — connection, migration drift, constraint violation, timeout — can never prevent the KV write, alter the API response, or throw out of the build. Diagnostics go to the Worker's console log only, never into the response `warnings[]` array, so the API envelope is byte-for-byte identical whether D1 is healthy, failing, or entirely absent. Verified with a dedicated test (`api/worker.test.js`) that runs the full build with a D1 binding that throws on every call and confirms the response is unchanged.
+
+**Cold-start safe:** the write decision is keyed off D1's own stored history, not the KV cache's `coldStart` flag — a KV cold start doesn't cause a revision-store write storm, because D1 still remembers what it saw last time regardless of what happened to the KV cache. The only scenario that inserts a full-corpus baseline in one build is D1's own first-ever run against an empty table, which is expected and one-time.
 
 ---
 
@@ -225,8 +243,10 @@ Every item also carries a Tier A/B/C badge recording how strong Microsoft's own 
 │   │   ├── identity/     # Real title-rewording cases (item identity, Phase 1)
 │   │   ├── evidence/     # Cross-source tier-ranking fixture (Phase 1)
 │   │   └── taxonomy/     # Real classification fixtures + raw->canonical mapping (Phase 2)
+│   ├── migrations/       # D1 schema migrations (forward-only)
+│   │   └── 0001_create_item_revisions.sql  # Revision store table (Phase 3)
 │   ├── package.json      # type:module marker for the test runner (no deps)
-│   └── wrangler.toml     # Worker configuration
+│   └── wrangler.toml     # Worker configuration (KV + D1 bindings)
 ├── web/                  # Pages frontend
 │   ├── index.html        # Full frontend
 │   └── wrangler.toml     # Pages configuration
