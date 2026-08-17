@@ -877,13 +877,21 @@ details[open] > .entry-summary .entry-caret { transform: rotate(180deg); }
 .footer-text a:hover { text-decoration: underline; }
 .source-health-item.degraded { color: var(--yel); }
 
+/* Degraded-source banner -- deliberately the same calm "informational"
+   register as tier-A badges and the tenant-match badge (accent blue), not
+   the warning-yellow it used to wear. This is a heads-up that the tracker
+   caught an upstream hiccup and protected the feed, not an alert that the
+   product is broken -- the styling should read that way at a glance,
+   before anyone reads the copy. */
 .degraded-banner {
   display: flex; align-items: center; gap: 0.6rem;
-  background: var(--yel-bg); border: 1px solid var(--yel-bdr); color: var(--yel);
+  background: var(--accent-bg); border: 1px solid rgba(88,166,255,.3); color: var(--accent);
   border-radius: var(--r); padding: 0.7rem 1rem; margin-bottom: 1rem;
-  font-family: var(--fm); font-size: 0.82rem; line-height: 1.5;
+  font-family: var(--fd); font-size: 0.85rem; line-height: 1.6;
+  animation: card-in 0.25s ease-out;
 }
-.degraded-banner-icon { flex-shrink: 0; }
+.degraded-banner-icon { flex-shrink: 0; font-size: 1rem; }
+.degraded-banner-since { color: var(--text-muted); font-family: var(--fm); font-size: 0.78rem; }
 
 /* ── Responsive ── */
 @media (max-width: 1200px) { .page { padding: 2rem 2rem 4rem; } }
@@ -1032,9 +1040,11 @@ details[open] > .entry-summary .entry-caret { transform: rotate(180deg); }
     </div>
   </div>
 
-  <!-- Degraded-mode banner -->
-  <div class="degraded-banner" id="degradedBanner" style="display:none">
-    <span class="degraded-banner-icon">&#9888;&#65039;</span>
+  <!-- Degraded-mode banner: a heads-up that the tracker protected the feed
+       from an upstream hiccup, not an alert that something is broken --
+       aria-live so assistive tech is told when this appears/updates. -->
+  <div class="degraded-banner" id="degradedBanner" style="display:none" role="status" aria-live="polite">
+    <span class="degraded-banner-icon" aria-hidden="true">&#10227;</span>
     <span id="degradedBannerText"></span>
   </div>
 
@@ -2174,14 +2184,46 @@ const SOURCE_DISPLAY_NAMES = {
 };
 function sourceDisplayName(id) { return SOURCE_DISPLAY_NAMES[id] || id; }
 
-function renderDegradedBanner(degraded) {
+// Reassurance-first, not fault-first: the tracker caught an incomplete
+// upstream response and protected the feed by keeping the last verified
+// data, rather than publish a partial list -- that's a thing working
+// correctly, not a thing broken. Leads with what's trustworthy (the data
+// shown), names the cause as upstream (Microsoft's feed, not "this
+// cycle"/"refresh" tracker-internal vocabulary), states the last-confirmed
+// moment concretely per source (reusing GET /health's own lastSuccessAt --
+// no extra fetch), and closes with the "keeps trying automatically"
+// reassurance, which is literally true: every cron cycle re-fetches every
+// source regardless of degraded state, and the flag clears itself the
+// moment a source's real count recovers (see applyDegradedGate() in the
+// Worker -- a degraded build never touches its own trailing baseline,
+// specifically so it CAN recover cleanly next cycle).
+//
+// Driven by two independent async sources (the main feed's `degraded[]`
+// and GET /health's per-source lastSuccessAt) -- rendered from whichever
+// resolves first (without a timestamp yet), then re-rendered once both are
+// in, rather than blocking the banner on a second request.
+let latestDegraded = [];
+let latestHealthSources = null;
+
+function renderDegradedBanner() {
   const el = document.getElementById('degradedBanner');
   const textEl = document.getElementById('degradedBannerText');
   if (!el || !textEl) return;
-  if (!degraded || !degraded.length) { el.style.display = 'none'; return; }
-  const names = degraded.map(sourceDisplayName).join(', ');
-  const plural = degraded.length > 1;
-  textEl.textContent = `${names} ${plural ? "haven't" : "hasn't"} updated normally this cycle -- showing the last known data for ${plural ? 'them' : 'it'} instead of a possibly-incomplete refresh.`;
+  if (!latestDegraded.length) { el.style.display = 'none'; return; }
+
+  const plural = latestDegraded.length > 1;
+  const named = latestDegraded.map(source => {
+    const label = sourceDisplayName(source);
+    const s = latestHealthSources && latestHealthSources[source];
+    const when = s && s.lastSuccessAt ? fmtHealthTimestamp(s.lastSuccessAt) : null;
+    return when ? `${esc(label)} <span class="degraded-banner-since">(last confirmed ${esc(when)})</span>` : esc(label);
+  }).join(plural ? '; ' : '');
+
+  textEl.innerHTML = `Showing last confirmed data for ${named}. `
+    + `Microsoft's feed${plural ? 's' : ''} returned ${plural ? 'incomplete responses' : 'an incomplete response'} -- `
+    + `the tracker kept the verified data rather than show ${plural ? 'partial lists' : 'a partial list'}, `
+    + `and will refresh automatically as soon as ${plural ? 'each source recovers' : 'it recovers'}. `
+    + `Everything else on this page is current.`;
   el.style.display = 'flex';
 }
 
@@ -2193,6 +2235,13 @@ async function loadHealth() {
     const res = await fetch(API + '/health', { mode: 'cors', credentials: 'omit' });
     if (!res.ok) return;
     const health = await res.json();
+
+    // Upgrade the degraded banner with a concrete last-confirmed timestamp
+    // per source, if it's already showing (or about to). No extra fetch --
+    // this reuses the same /health call the footer below already makes.
+    latestHealthSources = health.sources || null;
+    renderDegradedBanner();
+
     const footerEl = document.getElementById('sourceHealthFooter');
     if (!footerEl || !health.sources) return;
     const parts = Object.entries(health.sources).map(([source, s]) => {
@@ -2282,7 +2331,8 @@ async function load(){
     const data = await res.json();
     all = data.items || [];
     coldStart = !!data.coldStart;
-    renderDegradedBanner(data.degraded);
+    latestDegraded = data.degraded || [];
+    renderDegradedBanner();
 
     const d = new Date(data.lastUpdated);
     document.getElementById('upd').textContent = 'Updated ' + d.toLocaleString('en-GB', {

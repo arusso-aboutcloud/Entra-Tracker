@@ -313,6 +313,42 @@
   zero and get richer as real changes accumulate. The rich (multi-slip)
   UI states were verified with mocked data for exactly this reason.
   150 tests total (127 pre-existing unaffected, 23 new).
+- [x] Degraded-banner copy rewrite -- triggered by the Phase 4 degraded
+  gate firing in production for the first time (2026-08-17), correctly,
+  against `entra-whatsnew-md`. The mechanism worked exactly as designed;
+  the banner *wording* didn't -- "hasn't updated normally this cycle...
+  possibly-incomplete refresh" read like the product was broken, when the
+  gate had in fact caught an upstream problem and protected the feed.
+  Rewritten to lead with reassurance (what's shown is verified, last-
+  confirmed data), attribute the cause to Microsoft's feed rather than
+  tracker-internal vocabulary, state a concrete last-confirmed timestamp
+  per source (reused from the existing `GET /health` fetch, no new
+  request added), and close with an accurate "refreshes automatically"
+  reassurance (every cron cycle re-fetches every source regardless of
+  degraded state; the flag clears itself the moment a source's real count
+  recovers). Handles one or several degraded sources in the same sentence
+  with correct singular/plural grammar, and reads correctly for a large
+  central source or a small peripheral one. Styling switched from
+  warning-yellow with a `⚠️` triangle to the same calm accent-blue
+  register the rest of the page already uses for informational badges,
+  with a `⟳` glyph and a one-shot (not looping) entrance animation,
+  `role="status" aria-live="polite"` added. Text now renders in Chakra
+  Petch, matching the rest of the page's headline font.
+  **Diagnostic finding (§C, no parser change made or needed):** checked
+  `GET /health` (`lastCount: 0`, `trailingMedian: 91`, degraded since the
+  12:01 UTC build) and the live envelope's own `errors[]`, which named the
+  actual cause directly: `HTTP 429` from `raw.githubusercontent.com`,
+  simultaneously across three same-domain sources -- a rate limit, not a
+  markup change. Confirmed by re-fetching the live source and running the
+  current parser against it: 91 items, exactly matching the pre-incident
+  trailing median. The page structure is unchanged; this was a transient
+  upstream blip, self-healing on the next successful cron cycle. No
+  pipeline/parser change made, per the work order's explicit "stop and
+  report before writing a fix" rule for anything the diagnostic finds --
+  moot here since nothing was found to fix.
+  No pipeline/data-path changes; JSON/CSV/RSS/ICS output byte-for-byte
+  unchanged (frontend-only diff, confirmed by inspection -- no `api/`
+  files touched).
 
 ## Planned
 
