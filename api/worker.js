@@ -28,7 +28,7 @@
  */
 
 const ALLOWED_ORIGINS = [
-  'https://blog.aboutcloud.io',
+  'https://www.aboutcloud.io',
     'https://aboutcloud.io',
   'https://tracker.aboutcloud.io',
   'https://entratracker.aboutcloud.io',
