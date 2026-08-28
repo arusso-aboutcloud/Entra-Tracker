@@ -428,6 +428,19 @@ A full visual and interaction redesign, fixing two specific problems rather than
 
 ---
 
+## Related aboutcloud.io tools
+
+Other free, open-source Entra ID tools from the same team:
+
+| Tool | What it does |
+|---|---|
+| [Entra RoleLens](https://entrarolelens.aboutcloud.io) ([source](https://github.com/arusso-aboutcloud/Entra-Rolelens)) | Least-privilege Entra ID role finder — task → minimum built-in role |
+| [EntraPass](https://entrapass.aboutcloud.io) ([source](https://github.com/arusso-aboutcloud/EntraPass)) | Passkey (FIDO2) readiness scanner for Entra ID tenants |
+| [AADSTS Entra Errors](https://entraerrors.aboutcloud.io) ([source](https://github.com/arusso-aboutcloud/AADSTS-Entra-Errors)) | Searchable AADSTS error code reference |
+| [CROSSEC](https://crossec.aboutcloud.io) ([source](https://github.com/arusso-aboutcloud/crossed)) | Microsoft Cloud security crossword game |
+
+---
+
 ## License
 
 MIT — see [LICENSE](./LICENSE) for full text.
