@@ -3,13 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Entra Change Tracker — AboutCloud</title>
+<title>Entra ID Change Tracker — AboutCloud</title>
 <meta name="description" content="Live tracker for Microsoft Entra ID retirements, breaking changes and preview features. Built by AboutCloud.io">
-<link rel="icon" href="https://www.aboutcloud.io/content/images/size/w256h256/2026/03/logo_60x60_white.png">
+<link rel="icon" href="assets/aboutcloud-favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="assets/aboutcloud-icon-256.png">
 <link rel="canonical" href="https://entratracker.aboutcloud.io">
 
 <!-- Open Graph -->
-<meta property="og:title" content="Entra Change Tracker — AboutCloud">
+<meta property="og:title" content="Entra ID Change Tracker — AboutCloud">
 <meta property="og:description" content="Live Microsoft Entra ID &amp; External ID change tracker — retirements, breaking changes and previews">
 <meta property="og:url" content="https://entratracker.aboutcloud.io">
 <meta property="og:image" content="https://images.aboutcloud.io/logos/entra-brand-logo-300.png">
@@ -125,29 +126,109 @@ summary:focus-visible, .chip:focus-visible, [tabindex]:focus-visible {
   border-radius: 4px;
 }
 
-/* ── Top nav / header ── */
+/* ── Top nav / header ──
+   Brand mark rebuilt to match Entra RoleLens's header treatment: an
+   AboutCloud glowing/rotating chip (source of truth: aboutcloud.io, same
+   asset already verified for RoleLens) + divider + a two-tone glowing
+   product wordmark, replacing the old flat "Microsoft Entra" logo image.
+   Site's own font/color tokens (--fd, --accent) carried through unchanged --
+   only the layout/treatment is new, not the palette. */
 .hdr {
   max-width: 1400px; margin: 0 auto;
   padding: 0 48px;
   min-height: 88px;
   height: auto;
   display: flex; align-items: center; justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-.brand { display: flex; align-items: center; gap: 22px; text-decoration: none; }
-.brand-logo { height: 100px; width: auto; }
-.brand-sep { width: 1px; height: 40px; background: var(--border-strong); }
-.brand-info { display: flex; flex-direction: column; gap: 5px; }
+.brand { display: flex; align-items: center; gap: 18px; }
+
+.ac-brand { display: flex; align-items: center; text-decoration: none; transition: opacity 0.15s; }
+.ac-brand:hover { opacity: 0.85; }
+
+.ac-chip {
+  position: relative;
+  width: 52px; height: 52px;
+  border-radius: 13px;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(88,166,255,0.08);
+  box-shadow: 0 0 24px rgba(88,166,255,0.3), inset 0 0 14px rgba(88,166,255,0.15);
+}
+.ac-chip img { position: relative; z-index: 1; width: 32px; height: auto; }
+
+/* Ring shape via mask: a colored box masked down to just its padding band
+   (content-box cut out of the full box), leaving a thin annulus around the
+   chip -- an actual conic-gradient ring, not a CSS icon glyph. Same
+   technique as RoleLens's header chip. */
+.ac-ring {
+  position: absolute; inset: -3px;
+  border-radius: 16px; padding: 3px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.ac-ring-cw  { background: conic-gradient(from 0deg, #00d4ff, transparent 70%, #00d4ff); animation: ac-spin-cw 3.8s linear infinite; }
+.ac-ring-ccw { background: conic-gradient(from 0deg, #7fe3ff, transparent 70%, #7fe3ff); opacity: 0.8; animation: ac-spin-ccw 5.2s linear infinite; }
+@keyframes ac-spin-cw  { to { transform: rotate(360deg); } }
+@keyframes ac-spin-ccw { to { transform: rotate(-360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .ac-ring-cw  { animation: none; transform: rotate(20deg); }
+  .ac-ring-ccw { animation: none; transform: rotate(-20deg); }
+}
+/* Continuous conic-gradient rotation + the wordmark's text-shadow glow below
+   both force a repaint every frame -- fine on desktop, measurably not on
+   mid/low-tier mobile GPUs (same reasoning already documented for the
+   sn-glow-* stat numbers). Freeze at a static angle/peak-shadow instead of
+   animating on touch devices. */
+@media (pointer: coarse) {
+  .ac-ring-cw  { animation: none; transform: rotate(20deg); }
+  .ac-ring-ccw { animation: none; transform: rotate(-20deg); }
+}
+
+.brand-sep { width: 1px; height: 44px; align-self: center; flex-shrink: 0;
+  background: linear-gradient(180deg, transparent, var(--border-strong) 20%, var(--border-strong) 80%, transparent); }
+
+.brand-text { display: flex; flex-direction: column; gap: 4px; text-decoration: none; }
 .brand-name {
   font-family: var(--fd);
-  font-size: 1.45rem; font-weight: 600;
-  color: var(--text); letter-spacing: 0.01em; line-height: 1;
+  font-size: 1.7rem; font-weight: 700;
+  letter-spacing: -0.01em; line-height: 1;
+}
+.brand-name .brand-ms     { color: #0078D4; animation: brand-glow-ms 3s ease-in-out infinite; }
+.brand-name .brand-accent { color: var(--accent); animation: brand-glow-accent 3s ease-in-out infinite 0.4s; }
+@keyframes brand-glow-ms {
+  0%, 100% { text-shadow: 0 0 6px rgba(0,120,212,0.9), 0 0 16px rgba(0,120,212,0.5), 0 0 34px rgba(0,120,212,0.25); }
+  50%       { text-shadow: 0 0 3px rgba(0,120,212,0.4), 0 0 8px rgba(0,120,212,0.2),  0 0 16px rgba(0,120,212,0.08); }
+}
+@keyframes brand-glow-accent {
+  0%, 100% { text-shadow: 0 0 6px rgba(88,166,255,0.9), 0 0 16px rgba(88,166,255,0.5), 0 0 34px rgba(88,166,255,0.25); }
+  50%       { text-shadow: 0 0 3px rgba(88,166,255,0.4), 0 0 8px rgba(88,166,255,0.2),  0 0 16px rgba(88,166,255,0.08); }
+}
+@media (pointer: coarse) {
+  .brand-name .brand-ms     { animation: none; text-shadow: 0 0 6px rgba(0,120,212,0.9), 0 0 16px rgba(0,120,212,0.5), 0 0 34px rgba(0,120,212,0.25); }
+  .brand-name .brand-accent { animation: none; text-shadow: 0 0 6px rgba(88,166,255,0.9), 0 0 16px rgba(88,166,255,0.5), 0 0 34px rgba(88,166,255,0.25); }
 }
 .brand-sub {
   font-family: var(--fm); font-size: 12px;
   color: var(--accent); letter-spacing: 0.08em;
   text-transform: uppercase; line-height: 1;
 }
+
+.hdr-right { display: flex; align-items: center; gap: 16px; }
+
+.gh-link {
+  color: var(--text-muted); text-decoration: none;
+  display: flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 50%;
+  background: var(--surface-2); border: 1px solid var(--border);
+  transition: all 0.2s ease;
+}
+.gh-link:hover { color: var(--text); border-color: var(--accent); box-shadow: 0 0 16px rgba(88,166,255,0.3); }
+.gh-link svg { width: 22px; height: 22px; }
 
 nav { display: flex; align-items: center; gap: 6px; }
 nav a {
@@ -909,10 +990,15 @@ details[open] > .entry-summary .entry-caret { transform: rotate(180deg); }
 @media (max-width: 640px) {
   .page { padding: 1.5rem 1.25rem 3rem; }
   .hdr { padding: 0 24px; }
-  .brand-logo { height: 64px; }
-  .brand-name { font-size: 1.1rem; }
+  .brand { gap: 12px; }
+  .ac-chip { width: 42px; height: 42px; border-radius: 11px; }
+  .ac-chip img { width: 26px; }
+  .ac-ring { border-radius: 14px; }
+  .brand-sep { height: 36px; }
+  .brand-name { font-size: 1.25rem; }
   .brand-sub  { display: none; }
   nav { display: none; }
+  .gh-link { display: none; }
 
   .hero { flex-direction: column; gap: 1rem; }
   .hero-right { align-items: flex-start; }
@@ -939,25 +1025,35 @@ details[open] > .entry-summary .entry-caret { transform: rotate(180deg); }
 </head>
 <body>
 
-<!-- Header (matching entra-errors style) -->
+<!-- Header (AboutCloud brand mark, matching Entra RoleLens's header treatment) -->
 <header>
   <div class="hdr">
-    <a href="https://www.aboutcloud.io" class="brand">
-      <img src="https://images.aboutcloud.io/logos/entra-brand-logo-300.png"
-           alt="Microsoft Entra" class="brand-logo" />
-      <div class="brand-sep"></div>
-      <div class="brand-info">
-        <span class="brand-name">Change Tracker</span>
+    <div class="brand">
+      <a href="https://www.aboutcloud.io" target="_blank" rel="noopener" class="ac-brand" aria-label="aboutcloud.io">
+        <span class="ac-chip">
+          <span class="ac-ring ac-ring-cw" aria-hidden="true"></span>
+          <span class="ac-ring ac-ring-ccw" aria-hidden="true"></span>
+          <img src="assets/logo-icon-dark-theme.png" alt="AboutCloud" />
+        </span>
+      </a>
+      <span class="brand-sep" aria-hidden="true"></span>
+      <a href="/" class="brand-text">
+        <span class="brand-name"><span class="brand-ms">Entra ID</span> <span class="brand-accent">Change Tracker</span></span>
         <span class="brand-sub">Community · aboutcloud.io</span>
-      </div>
-    </a>
-    <nav>
-      <a href="https://www.aboutcloud.io">Home</a>
-      <a href="https://entratracker.aboutcloud.io" class="active">Entra Tracker</a>
-      <a href="https://entraerrors.aboutcloud.io">Entra Errors</a>
-      <a href="https://entrarolelens.aboutcloud.io">Entra RoleLens</a>
-      <a href="https://entrapass.aboutcloud.io">EntraPass</a>
-    </nav>
+      </a>
+    </div>
+    <div class="hdr-right">
+      <nav>
+        <a href="https://www.aboutcloud.io">Home</a>
+        <a href="https://entratracker.aboutcloud.io" class="active">Entra Tracker</a>
+        <a href="https://entraerrors.aboutcloud.io">Entra Errors</a>
+        <a href="https://entrarolelens.aboutcloud.io">Entra RoleLens</a>
+        <a href="https://entrapass.aboutcloud.io">EntraPass</a>
+      </nav>
+      <a href="https://github.com/arusso-aboutcloud/Entra-Tracker" target="_blank" rel="noopener" class="gh-link" aria-label="GitHub">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+      </a>
+    </div>
   </div>
 </header>
 
@@ -968,7 +1064,7 @@ details[open] > .entry-summary .entry-caret { transform: rotate(180deg); }
   <div class="hero">
     <div class="hero-left">
       <div>
-        <div class="hero-title">Entra Change Tracker</div>
+        <div class="hero-title">Entra ID Change Tracker</div>
         <div class="hero-sub">Retirements, breaking changes, previews &amp; roadmap items, tracked live with deadline history</div>
       </div>
     </div>
