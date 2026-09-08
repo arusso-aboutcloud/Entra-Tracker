@@ -1,113 +1,133 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 560" font-family="system-ui, -apple-system, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 560" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0d1117"/>
-      <stop offset="100%" stop-color="#161b22"/>
-    </linearGradient>
-    <linearGradient id="src" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#00a4ef"/>
-      <stop offset="100%" stop-color="#0078d4"/>
-    </linearGradient>
-    <linearGradient id="worker" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#6e40c9"/>
-      <stop offset="100%" stop-color="#553098"/>
-    </linearGradient>
-    <linearGradient id="kv" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0366d6"/>
-      <stop offset="100%" stop-color="#0250a3"/>
-    </linearGradient>
-    <linearGradient id="d1" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#f58423"/>
-      <stop offset="100%" stop-color="#c96410"/>
-    </linearGradient>
-    <linearGradient id="pages" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#28a745"/>
-      <stop offset="100%" stop-color="#1a7f32"/>
-    </linearGradient>
-    <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-    <marker id="arrowD" markerWidth="7" markerHeight="10" refX="3.5" refY="10" orient="auto">
-      <polygon points="0 0, 7 0, 3.5 10" fill="#8b949e"/>
+    <marker id="dot" markerWidth="6" markerHeight="6" refX="3" refY="3">
+      <circle cx="3" cy="3" r="2.2" fill="#3d4654"/>
     </marker>
+    <!-- Icons: style attrs live on the <g id> itself, never a wrapping
+         ancestor (<use> only clones the referenced element's own
+         attributes). Defined inside <defs> so they render only via <use>,
+         not a second time at their own definition point. -->
+    <g id="doc-icon" stroke="#2496ed" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 1.5h5l2.5 2.5V11a.6.6 0 0 1-.6.6H2.6A.6.6 0 0 1 2 11V2.1a.6.6 0 0 1 .6-.6z"/>
+      <path d="M7 1.5V4h2.5"/>
+      <line x1="3.4" y1="6.8" x2="7.6" y2="6.8"/>
+      <line x1="3.4" y1="8.8" x2="7.6" y2="8.8"/>
+    </g>
+    <g id="bolt-icon" stroke="#f38020" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13 2 L5 13.5h7l-1.2 8.5L18 10.5h-7z"/>
+    </g>
+    <g id="db-icon" stroke="#58a6ff" fill="none" stroke-width="1.4" stroke-linecap="round">
+      <ellipse cx="10" cy="4" rx="8" ry="3"/>
+      <path d="M2 4v14c0 1.7 3.6 3 8 3s8-1.3 8-3V4"/>
+      <path d="M2 11c0 1.7 3.6 3 8 3s8-1.3 8-3"/>
+    </g>
+    <g id="browser-icon" stroke="#3fb950" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="1" y="1" width="26" height="20" rx="2.5"/>
+      <line x1="1" y1="7" x2="27" y2="7"/>
+      <circle cx="5.5" cy="4" r="0.9" fill="#3fb950" stroke="none"/>
+      <circle cx="9" cy="4" r="0.9" fill="#3fb950" stroke="none"/>
+    </g>
+    <g id="user-icon" stroke="#9aa4b2" fill="none" stroke-width="1.4" stroke-linecap="round">
+      <circle cx="11" cy="6" r="5"/>
+      <path d="M1 23c0-6 4.5-10.4 10-10.4S21 17 21 23"/>
+    </g>
   </defs>
 
-  <rect width="760" height="560" rx="12" fill="url(#bg)"/>
-  <rect width="760" height="560" rx="12" fill="none" stroke="#30363d" stroke-width="1"/>
+  <rect width="760" height="560" rx="10" fill="#0a0d12"/>
+  <rect x="0.5" y="0.5" width="759" height="559" rx="10" fill="none" stroke="#1c222c" stroke-width="1"/>
 
   <!-- Title -->
-  <text x="380" y="30" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="700">Entra Tracker — Architecture</text>
-  <text x="380" y="48" text-anchor="middle" fill="#8b949e" font-size="11">7 Microsoft-official sources · parallel fetch · cron every 4h</text>
+  <text x="32" y="36" fill="#e6edf3" font-size="17" font-weight="600">Entra Tracker</text>
+  <text x="32" y="54" fill="#9aa4b2" font-size="11">7 Microsoft-official sources · Cloudflare Worker · cron every 4h</text>
+  <line x1="32" y1="68" x2="728" y2="68" stroke="#1c222c" stroke-width="1"/>
 
-  <!-- Sources: 7 boxes, two rows of 4/3 -->
+  <!-- ── SOURCES: single row of 7, avoids any connector/box-crossing issue ── -->
+  <text x="32" y="90" fill="#9aa4b2" font-size="10" font-weight="600" letter-spacing="1.5">SOURCES</text>
+
   <g font-size="9.5">
-    <!-- row 1 -->
-    <g transform="translate(28,64)"><rect width="98" height="46" rx="7" fill="url(#src)"/><text x="49" y="18" text-anchor="middle" fill="#fff" font-weight="700" font-size="10">1. whats-new.md</text><text x="49" y="32" text-anchor="middle" fill="#eaf6ff" font-size="8.5">entra-docs · Markdown</text></g>
-    <g transform="translate(136,64)"><rect width="98" height="46" rx="7" fill="url(#src)"/><text x="49" y="18" text-anchor="middle" fill="#fff" font-weight="700" font-size="10">2. FSLogix notes</text><text x="49" y="32" text-anchor="middle" fill="#eaf6ff" font-size="8.5">learn.microsoft.com · HTML</text></g>
-    <g transform="translate(244,64)"><rect width="98" height="46" rx="7" fill="url(#src)"/><text x="49" y="18" text-anchor="middle" fill="#fff" font-weight="700" font-size="10">3. External ID docs</text><text x="49" y="32" text-anchor="middle" fill="#eaf6ff" font-size="8.5">entra-docs · Markdown</text></g>
-    <g transform="translate(352,64)"><rect width="98" height="46" rx="7" fill="url(#src)"/><text x="49" y="18" text-anchor="middle" fill="#fff" font-weight="700" font-size="10">4. B2C docs</text><text x="49" y="32" text-anchor="middle" fill="#eaf6ff" font-size="8.5">azure-docs · Markdown</text></g>
-    <!-- row 2 -->
-    <g transform="translate(82,118)"><rect width="98" height="46" rx="7" fill="url(#src)"/><text x="49" y="18" text-anchor="middle" fill="#fff" font-weight="700" font-size="10">5. Customer commits</text><text x="49" y="32" text-anchor="middle" fill="#eaf6ff" font-size="8.5">GitHub Commits API</text></g>
-    <g transform="translate(190,118)"><rect width="98" height="46" rx="7" fill="url(#src)"/><text x="49" y="18" text-anchor="middle" fill="#fff" font-weight="700" font-size="10">6. Graph changelog</text><text x="49" y="32" text-anchor="middle" fill="#eaf6ff" font-size="8.5">developer.microsoft.com · RSS</text></g>
-    <g transform="translate(298,118)"><rect width="98" height="46" rx="7" fill="url(#src)"/><text x="49" y="18" text-anchor="middle" fill="#fff" font-weight="700" font-size="10">7. M365 Roadmap</text><text x="49" y="32" text-anchor="middle" fill="#eaf6ff" font-size="8.5">microsoft.com · JSON API</text></g>
+    <g transform="translate(32,98)"><rect width="94" height="56" rx="7" fill="#12161d" stroke="#242b36"/><use href="#doc-icon" transform="translate(10,10)"/><text x="10" y="34" fill="#c9d1d9" font-weight="600" font-size="9">whats-new.md</text><text x="10" y="46" fill="#9aa4b2" font-size="7.5">entra-docs</text></g>
+    <g transform="translate(132,98)"><rect width="94" height="56" rx="7" fill="#12161d" stroke="#242b36"/><use href="#doc-icon" transform="translate(10,10)"/><text x="10" y="34" fill="#c9d1d9" font-weight="600" font-size="9">FSLogix notes</text><text x="10" y="46" fill="#9aa4b2" font-size="7.5">learn.microsoft.com</text></g>
+    <g transform="translate(232,98)"><rect width="94" height="56" rx="7" fill="#12161d" stroke="#242b36"/><use href="#doc-icon" transform="translate(10,10)"/><text x="10" y="34" fill="#c9d1d9" font-weight="600" font-size="9">External ID docs</text><text x="10" y="46" fill="#9aa4b2" font-size="7.5">entra-docs</text></g>
+    <g transform="translate(332,98)"><rect width="94" height="56" rx="7" fill="#12161d" stroke="#242b36"/><use href="#doc-icon" transform="translate(10,10)"/><text x="10" y="34" fill="#c9d1d9" font-weight="600" font-size="9">B2C docs</text><text x="10" y="46" fill="#9aa4b2" font-size="7.5">azure-docs</text></g>
+    <g transform="translate(432,98)"><rect width="94" height="56" rx="7" fill="#12161d" stroke="#242b36"/><use href="#doc-icon" transform="translate(10,10)"/><text x="10" y="34" fill="#c9d1d9" font-weight="600" font-size="9">Customer commits</text><text x="10" y="46" fill="#9aa4b2" font-size="7.5">GitHub API</text></g>
+    <g transform="translate(532,98)"><rect width="94" height="56" rx="7" fill="#12161d" stroke="#242b36"/><use href="#doc-icon" transform="translate(10,10)"/><text x="10" y="34" fill="#c9d1d9" font-weight="600" font-size="9">Graph changelog</text><text x="10" y="46" fill="#9aa4b2" font-size="7.5">RSS</text></g>
+    <g transform="translate(632,98)"><rect width="96" height="56" rx="7" fill="#12161d" stroke="#242b36"/><use href="#doc-icon" transform="translate(10,10)"/><text x="10" y="34" fill="#c9d1d9" font-weight="600" font-size="9">M365 Roadmap</text><text x="10" y="46" fill="#9aa4b2" font-size="7.5">JSON API</text></g>
   </g>
 
-  <!-- Arrows: sources -> worker -->
-  <path d="M77,110 L280,192" stroke="#8b949e" stroke-width="1.2" fill="none" marker-end="url(#arrowD)" opacity="0.55"/>
-  <path d="M185,110 L320,192" stroke="#8b949e" stroke-width="1.2" fill="none" marker-end="url(#arrowD)" opacity="0.55"/>
-  <path d="M293,110 L360,192" stroke="#8b949e" stroke-width="1.2" fill="none" marker-end="url(#arrowD)" opacity="0.55"/>
-  <path d="M401,110 L400,192" stroke="#8b949e" stroke-width="1.2" fill="none" marker-end="url(#arrowD)" opacity="0.55"/>
-  <path d="M131,164 L440,192" stroke="#8b949e" stroke-width="1.2" fill="none" marker-end="url(#arrowD)" opacity="0.55"/>
-  <path d="M239,164 L460,192" stroke="#8b949e" stroke-width="1.2" fill="none" marker-end="url(#arrowD)" opacity="0.55"/>
-  <path d="M347,164 L480,192" stroke="#8b949e" stroke-width="1.2" fill="none" marker-end="url(#arrowD)" opacity="0.55"/>
+  <!-- Connectors: each source's bottom-center fans straight down into the
+       Worker box's top edge, no diagonal crossing over any other box,
+       since there is now only one source row above the Worker. -->
+  <g stroke="#2c3542" stroke-width="1.1" fill="none">
+    <path d="M79,154 L79,168 Q79,180 130,180 L200,180 Q220,180 220,196"/>
+    <path d="M179,154 L179,168 Q179,178 230,178 L260,178 Q280,178 280,196"/>
+    <path d="M279,154 L279,196"/>
+    <path d="M379,154 L379,196"/>
+    <path d="M479,154 L479,168 Q479,178 440,178 L420,178 Q400,178 400,196"/>
+    <path d="M579,154 L579,168 Q579,180 480,180 L460,180 Q460,180 460,196"/>
+    <path d="M680,154 L680,168 Q680,182 550,182 L530,182 Q520,182 520,196"/>
+  </g>
 
-  <!-- Worker -->
-  <g transform="translate(140,196)">
-    <rect width="480" height="98" rx="10" fill="url(#worker)" filter="url(#glow)"/>
-    <text x="240" y="22" text-anchor="middle" fill="#fff" font-weight="700" font-size="13">Cloudflare Worker · entra-tracker</text>
-    <text x="240" y="37" text-anchor="middle" fill="#e8ddff" font-size="9.5">fetch + scheduled handlers · parallel source fetch</text>
-    <g font-size="9" fill="#f3ecff">
-      <rect x="16" y="50" width="98" height="32" rx="6" fill="#ffffff22"/><text x="65" y="70" text-anchor="middle">Parse + classify</text>
-      <rect x="126" y="50" width="98" height="32" rx="6" fill="#ffffff22"/><text x="175" y="70" text-anchor="middle">Dedupe + merge</text>
-      <rect x="236" y="50" width="98" height="32" rx="6" fill="#ffffff22"/><text x="285" y="70" text-anchor="middle">Evidence + deadline</text>
-      <rect x="346" y="50" width="118" height="32" rx="6" fill="#ffffff22"/><text x="405" y="70" text-anchor="middle">Degraded-source gate</text>
+  <!-- ── PROCESSING ────────────────────────────────────────────── -->
+  <text x="32" y="192" fill="#9aa4b2" font-size="10" font-weight="600" letter-spacing="1.5">PROCESSING</text>
+
+  <g transform="translate(32,198)">
+    <rect width="696" height="84" rx="8" fill="#151009" stroke="#3a2410"/>
+    <use href="#bolt-icon" transform="translate(18,14)"/>
+    <text x="48" y="28" fill="#f38020" font-size="13" font-weight="700">Cloudflare Worker</text>
+    <text x="48" y="44" fill="#9aa4b2" font-size="9.5">entra-tracker · fetch + scheduled handlers</text>
+    <g font-size="8.7" fill="#b9c0cb">
+      <rect x="18" y="56" width="150" height="20" rx="10" fill="none" stroke="#3a2410"/><text x="93" y="69.5" text-anchor="middle">Parse + classify</text>
+      <rect x="180" y="56" width="150" height="20" rx="10" fill="none" stroke="#3a2410"/><text x="255" y="69.5" text-anchor="middle">Dedupe + merge</text>
+      <rect x="342" y="56" width="160" height="20" rx="10" fill="none" stroke="#3a2410"/><text x="422" y="69.5" text-anchor="middle">Evidence + deadline</text>
+      <rect x="514" y="56" width="164" height="20" rx="10" fill="none" stroke="#3a2410"/><text x="596" y="69.5" text-anchor="middle">Degraded-source gate</text>
     </g>
   </g>
 
-  <!-- Worker -> KV / D1 -->
-  <path d="M300,294 L230,336" stroke="#8b949e" stroke-width="1.4" fill="none" marker-end="url(#arrowD)"/>
-  <path d="M460,294 L530,336" stroke="#8b949e" stroke-width="1.4" fill="none" marker-end="url(#arrowD)"/>
+  <path d="M270,282 L270,296 Q270,306 300,306 L300,318" stroke="#2c3542" stroke-width="1.1" fill="none" marker-end="url(#dot)"/>
+  <path d="M458,282 L458,296 Q458,306 460,306 L460,318" stroke="#2c3542" stroke-width="1.1" fill="none" marker-end="url(#dot)"/>
 
-  <!-- KV -->
-  <g transform="translate(90,338)">
-    <rect width="280" height="54" rx="9" fill="url(#kv)"/>
-    <text x="140" y="21" text-anchor="middle" fill="#fff" font-weight="700" font-size="11.5">KV · ENTRA_CACHE</text>
-    <text x="140" y="36" text-anchor="middle" fill="#d9ecff" font-size="8.5">Article cache + per-source health snapshot</text>
-    <text x="140" y="48" text-anchor="middle" fill="#d9ecff" font-size="8.5">4h HTTP cache · 30-day KV backstop TTL</text>
+  <!-- ── STORAGE ───────────────────────────────────────────────── -->
+  <text x="32" y="312" fill="#9aa4b2" font-size="10" font-weight="600" letter-spacing="1.5">STORAGE</text>
+
+  <g transform="translate(120,320)">
+    <rect width="240" height="64" rx="8" fill="#0d1522" stroke="#1c2c42"/>
+    <use href="#db-icon" transform="translate(16,14) scale(0.85)"/>
+    <text x="46" y="28" fill="#58a6ff" font-size="12" font-weight="700">KV · ENTRA_CACHE</text>
+    <text x="46" y="43" fill="#9aa4b2" font-size="8.5">Article cache + health snapshot</text>
+    <text x="46" y="55" fill="#6b7684" font-size="8">4h HTTP cache · 30-day KV backstop</text>
   </g>
 
-  <!-- D1 -->
-  <g transform="translate(400,338)">
-    <rect width="280" height="54" rx="9" fill="url(#d1)"/>
-    <text x="140" y="21" text-anchor="middle" fill="#fff" font-weight="700" font-size="11.5">D1 · entra-tracker-history</text>
-    <text x="140" y="36" text-anchor="middle" fill="#ffe9d6" font-size="8.5">Per-item revision log, written on real change</text>
-    <text x="140" y="48" text-anchor="middle" fill="#ffe9d6" font-size="8.5">Powers deadline-slip history · non-fatal if down</text>
+  <g transform="translate(400,320)">
+    <rect width="240" height="64" rx="8" fill="#0d1522" stroke="#1c2c42"/>
+    <use href="#db-icon" transform="translate(16,14) scale(0.85)"/>
+    <text x="46" y="28" fill="#58a6ff" font-size="12" font-weight="700">D1 · history</text>
+    <text x="46" y="43" fill="#9aa4b2" font-size="8.5">Per-item revision log</text>
+    <text x="46" y="55" fill="#6b7684" font-size="8">Powers deadline-slip history</text>
   </g>
 
-  <!-- KV+D1 -> Pages -->
-  <path d="M290,394 L380,442" stroke="#8b949e" stroke-width="1.4" fill="none" marker-end="url(#arrowD)"/>
-  <path d="M480,394 L400,442" stroke="#8b949e" stroke-width="1.4" fill="none" marker-end="url(#arrowD)"/>
+  <path d="M240,384 L240,398 Q240,408 340,408 L340,418" stroke="#2c3542" stroke-width="1.1" fill="none" marker-end="url(#dot)"/>
+  <path d="M520,384 L520,398 Q520,408 440,408 L440,418" stroke="#2c3542" stroke-width="1.1" fill="none" marker-end="url(#dot)"/>
 
-  <!-- Pages -->
-  <g transform="translate(180,444)">
-    <rect width="400" height="56" rx="9" fill="url(#pages)"/>
-    <text x="200" y="22" text-anchor="middle" fill="#fff" font-weight="700" font-size="12">Cloudflare Pages</text>
-    <text x="200" y="38" text-anchor="middle" fill="#e3f9e8" font-size="9">entratracker.aboutcloud.io</text>
-    <text x="200" y="50" text-anchor="middle" fill="#e3f9e8" font-size="8.5">Unified filter bar · slip-history timeline · RSS/CSV/ICS export</text>
+  <!-- ── DELIVERY ──────────────────────────────────────────────── -->
+  <text x="32" y="412" fill="#9aa4b2" font-size="10" font-weight="600" letter-spacing="1.5">DELIVERY</text>
+
+  <g transform="translate(190,420)">
+    <rect width="380" height="60" rx="8" fill="#0a1710" stroke="#153322"/>
+    <use href="#browser-icon" transform="translate(16,14)"/>
+    <text x="54" y="28" fill="#3fb950" font-size="12" font-weight="700">Cloudflare Pages</text>
+    <text x="54" y="43" fill="#9aa4b2" font-size="8.5">entratracker.aboutcloud.io</text>
+    <text x="54" y="55" fill="#6b7684" font-size="8">Unified filter bar · slip-history timeline · RSS/CSV/ICS</text>
   </g>
 
-  <!-- Pages -> Users -->
-  <path d="M380,500 L380,522" stroke="#8b949e" stroke-width="1.4" fill="none" marker-end="url(#arrowD)"/>
-  <text x="380" y="540" text-anchor="middle" fill="#c9d1d9" font-size="11">🔍 Users — search · filter · subscribe (RSS/CSV/ICS)</text>
+  <path d="M380,480 L380,500" stroke="#2c3542" stroke-width="1.1" fill="none" marker-end="url(#dot)"/>
+
+  <!-- Users -->
+  <g transform="translate(320,504)">
+    <use href="#user-icon" transform="translate(0,0)"/>
+    <text x="30" y="10" fill="#c9d1d9" font-size="11" font-weight="600">Users</text>
+    <text x="30" y="24" fill="#9aa4b2" font-size="8.5">Search · filter · subscribe (RSS/CSV/ICS)</text>
+  </g>
 
   <!-- Footer -->
-  <text x="380" y="556" text-anchor="middle" fill="#6e7681" font-size="9">Auto-updated every 4 hours · €0/month · Open Source</text>
+  <text x="728" y="546" text-anchor="end" fill="#6b7684" font-size="9">Auto-updated every 4h · €0/month · Open Source</text>
 </svg>
