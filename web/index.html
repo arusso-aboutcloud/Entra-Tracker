@@ -171,23 +171,26 @@ summary:focus-visible, .chip:focus-visible, [tabindex]:focus-visible {
   -webkit-mask-composite: xor;
   mask-composite: exclude;
 }
-.ac-ring-cw  { background: conic-gradient(from 0deg, #00d4ff, transparent 70%, #00d4ff); animation: ac-spin-cw 3.8s linear infinite; }
-.ac-ring-ccw { background: conic-gradient(from 0deg, #7fe3ff, transparent 70%, #7fe3ff); opacity: 0.8; animation: ac-spin-ccw 5.2s linear infinite; }
+.ac-ring-cw  { background: conic-gradient(from 0deg, #00d4ff, transparent 70%, #00d4ff); animation: ac-spin-cw 3.8s linear infinite; will-change: transform; }
+.ac-ring-ccw { background: conic-gradient(from 0deg, #7fe3ff, transparent 70%, #7fe3ff); opacity: 0.8; animation: ac-spin-ccw 5.2s linear infinite; will-change: transform; }
 @keyframes ac-spin-cw  { to { transform: rotate(360deg); } }
 @keyframes ac-spin-ccw { to { transform: rotate(-360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .ac-ring-cw  { animation: none; transform: rotate(20deg); }
   .ac-ring-ccw { animation: none; transform: rotate(-20deg); }
 }
-/* Continuous conic-gradient rotation + the wordmark's text-shadow glow below
-   both force a repaint every frame -- fine on desktop, measurably not on
-   mid/low-tier mobile GPUs (same reasoning already documented for the
-   sn-glow-* stat numbers). Freeze at a static angle/peak-shadow instead of
-   animating on touch devices. */
-@media (pointer: coarse) {
-  .ac-ring-cw  { animation: none; transform: rotate(20deg); }
-  .ac-ring-ccw { animation: none; transform: rotate(-20deg); }
-}
+/* The wordmark's text-shadow glow below forces a repaint every frame --
+   fine on desktop, measurably not on mid/low-tier mobile GPUs (same
+   reasoning already documented for the sn-glow-* stat numbers) -- so that
+   one stays frozen on touch devices. The ring itself only animates
+   `transform`, which is compositor-only: measured no FPS/task-time
+   regression under Pixel 5 + 4x-CPU-throttle (matching RoleLens's #170
+   methodology), so it no longer needs the freeze it was originally swept
+   into. will-change: transform (above) hints the browser to promote it to
+   its own layer despite the mask, since a masked element can otherwise
+   fall back to main-thread compositing on some engines. Left spinning on
+   mobile; the prefers-reduced-motion freeze above still applies for
+   accessibility. */
 
 .brand-sep { width: 1px; height: 44px; align-self: center; flex-shrink: 0;
   background: linear-gradient(180deg, transparent, var(--border-strong) 20%, var(--border-strong) 80%, transparent); }
